@@ -1,0 +1,131 @@
+{
+  "task": "Search documentation",
+  "browser_use_version": "0.test",
+  "history": [
+    {
+      "model_output": {
+        "action": [
+          {
+            "click": {
+              "index": 3
+            }
+          },
+          {
+            "click": {
+              "coordinate_x": 120,
+              "coordinate_y": 80
+            }
+          }
+        ]
+      },
+      "result": [
+        {
+          "error": "element not found"
+        },
+        {
+          "extracted_content": "clicked search box"
+        }
+      ],
+      "state": {
+        "url": "https://example.com",
+        "title": "Example",
+        "tabs": [
+          {
+            "page_id": 1,
+            "url": "https://example.com",
+            "title": "Example"
+          }
+        ],
+        "interacted_element": [
+          {
+            "index": 3,
+            "tag": "button"
+          }
+        ],
+        "screenshot_path": "screenshots/step-1.png"
+      },
+      "metadata": {
+        "step_number": 1,
+        "step_start_time": 100.0,
+        "step_end_time": 101.0,
+        "step_interval": 1.0
+      },
+      "state_message": "Initial browser state"
+    },
+    {
+      "model_output": {
+        "action": [
+          {
+            "input": {
+              "index": 4,
+              "text": "MMTrace"
+            }
+          }
+        ]
+      },
+      "result": [
+        {
+          "success": true
+        }
+      ],
+      "state": {
+        "url": "https://example.com/search",
+        "title": "Search",
+        "tabs": [
+          {
+            "page_id": 1,
+            "url": "https://example.com/search",
+            "title": "Search"
+          }
+        ],
+        "interacted_element": [],
+        "screenshot_path": "screenshots/step-2.png"
+      },
+      "metadata": {
+        "step_number": 2,
+        "step_start_time": 102.0,
+        "step_end_time": 103.0,
+        "step_interval": 1.0
+      },
+      "state_message": "Search page"
+    },
+    {
+      "model_output": {
+        "action": [
+          {
+            "done": {
+              "text": "Finished",
+              "success": true
+            }
+          }
+        ]
+      },
+      "result": [
+        {
+          "success": true
+        }
+      ],
+      "state": {
+        "url": "https://example.com/search?q=MMTrace",
+        "title": "Results",
+        "tabs": [
+          {
+            "page_id": 1,
+            "url": "https://example.com/search?q=MMTrace",
+            "title": "Results"
+          }
+        ],
+        "interacted_element": [],
+        "screenshot_path": "screenshots/step-3.png"
+      },
+      "metadata": {
+        "step_number": 3,
+        "step_start_time": 104.0,
+        "step_end_time": 105.0,
+        "step_interval": 1.0
+      },
+      "state_message": "Result page"
+    }
+  ]
+}
+

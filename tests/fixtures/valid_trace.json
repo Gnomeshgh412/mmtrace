@@ -1,0 +1,50 @@
+{
+  "trace_id": "valid-trace",
+  "task": "Open the documentation",
+  "agent": "fixture-agent",
+  "steps": [
+    {
+      "step_id": "step-001",
+      "observation": {
+        "observation_id": "obs-001",
+        "width": 1280,
+        "height": 720,
+        "viewport_width": 1280,
+        "viewport_height": 720,
+        "timestamp": "2026-09-26T10:00:00Z"
+      },
+      "model_input": {
+        "model_call_id": "call-001",
+        "model": "fixture-model",
+        "observation_ids": ["obs-001"],
+        "timestamp": "2026-09-26T10:00:01Z"
+      },
+      "action": {
+        "action_id": "action-001",
+        "type": "click",
+        "x": 10,
+        "y": 20,
+        "coordinate_space": "viewport",
+        "timestamp": "2026-09-26T10:00:02Z"
+      },
+      "execution": {
+        "status": "success",
+        "timestamp": "2026-09-26T10:00:03Z"
+      },
+      "post_state": {
+        "observation": {
+          "observation_id": "obs-002",
+          "width": 1280,
+          "height": 720,
+          "viewport_width": 1280,
+          "viewport_height": 720,
+          "timestamp": "2026-09-26T10:00:04Z"
+        },
+        "url": "https://example.com/docs",
+        "window_title": "Docs",
+        "timestamp": "2026-09-26T10:00:04Z"
+      }
+    }
+  ]
+}
+

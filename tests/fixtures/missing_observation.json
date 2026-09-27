@@ -1,0 +1,15 @@
+{
+  "trace_id": "missing-observation",
+  "task": "Click without visual evidence",
+  "agent": "fixture-agent",
+  "steps": [
+    {
+      "step_id": "step-001",
+      "observation": null,
+      "action": {
+        "action_id": "action-001",
+        "type": "click"
+      }
+    }
+  ]
+}

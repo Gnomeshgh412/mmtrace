@@ -1,0 +1,30 @@
+{
+  "trace_id": "coordinate-out-of-frame",
+  "task": "Click outside the viewport",
+  "agent": "fixture-agent",
+  "steps": [
+    {
+      "step_id": "step-001",
+      "observation": {
+        "observation_id": "obs-001",
+        "viewport_width": 100,
+        "viewport_height": 100
+      },
+      "action": {
+        "action_id": "action-001",
+        "type": "click",
+        "x": 100,
+        "y": 50,
+        "coordinate_space": "viewport"
+      },
+      "execution": {
+        "status": "failed"
+      },
+      "post_state": {
+        "state_metadata": {
+          "note": "post-state present so MMTRACE006 does not fire"
+        }
+      }
+    }
+  ]
+}
