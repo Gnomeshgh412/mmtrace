@@ -12,6 +12,10 @@ Observation -> Model Context -> Action -> Execution -> Post-State
 
 It is intentionally small. MMTrace is not a general agent debugger, semantic judge, recovery framework, dashboard platform, or agent runtime.
 
+Real Browser Use trajectory inspected with MMTrace.
+
+![MMTrace Trace Inspector](docs/assets/trace-inspector.png)
+
 ## Why MMTrace
 
 Agent failure is not always reasoning failure. A trace can be hard to trust when screenshots are missing, model context does not reference the observed state, coordinates do not match the frame, actions lack execution evidence, or successful actions have no post-action verification.

@@ -12,6 +12,10 @@ Observation -> Model Context -> Action -> Execution -> Post-State
 
 MMTrace 刻意保持小而清晰。它不是通用 Agent 调试器、语义裁判、恢复框架、Dashboard 平台或 Agent runtime。
 
+使用 MMTrace 检查真实 Browser Use 运行轨迹。
+
+![MMTrace Trace Inspector](docs/assets/trace-inspector.png)
+
 ## Why MMTrace
 
 Agent 失败并不总是推理失败。很多时候，轨迹本身就缺少可信证据：截图缺失、model context 没有引用被观察到的状态、坐标与画面不匹配、动作缺少执行证据，或者成功动作没有 Post-State 验证。
