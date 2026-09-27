@@ -1,5 +1,7 @@
 # MMTrace
 
+English | [简体中文](README.zh-CN.md)
+
 Deterministic reliability checking and trace inspection for multimodal / computer-use agents.
 
 MMTrace verifies whether an agent trajectory has a trustworthy evidence chain:
