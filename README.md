@@ -1,37 +1,30 @@
 # MMTrace
 
-MMTrace is a deterministic reliability checker for multimodal / computer-use agent trajectories.
+Deterministic reliability checking and trace inspection for multimodal / computer-use agents.
 
-It checks whether the evidence chain in an agent trace is structurally consistent:
+MMTrace verifies whether an agent trajectory has a trustworthy evidence chain:
 
 ```text
 Observation -> Model Context -> Action -> Execution -> Post-State
 ```
 
-MMTrace is intentionally small. It is not a general agent debugger, root-cause analysis system, semantic judge, recovery framework, or dashboard.
-
-## Project Overview
-
-MMTrace defines a lightweight trace schema, deterministic checks, adapters for input formats, and a CLI that produces text or JSON reports.
-
-Current v0.1 core includes:
-
-- Core Pydantic schema for traces, findings, and reports
-- Checker engine
-- Rules `MMTRACE001` through `MMTRACE006`
-- Generic MMTrace JSON adapter
-- Browser Use history adapter
-- CLI with text and JSON output
-- Real Browser Use example trajectory
-- Offline regression tests, including real-trace-derived fault mutations
+It is intentionally small. MMTrace is not a general agent debugger, semantic judge, recovery framework, dashboard platform, or agent runtime.
 
 ## Why MMTrace
 
-Computer-use agents often fail because evidence is missing or inconsistent: an action is not tied to a screenshot, coordinates do not match a frame, a successful action has no post-action verification, or an observation was never placed in model context.
+Agent failure is not always reasoning failure. A trace can be hard to trust when screenshots are missing, model context does not reference the observed state, coordinates do not match the frame, actions lack execution evidence, or successful actions have no post-action verification.
 
-MMTrace focuses on deterministic evidence checks. When evidence is absent, rules skip instead of guessing.
+MMTrace focuses on deterministic checks over recorded evidence. When required evidence is absent, rules skip instead of guessing.
 
-## What It Checks
+## What MMTrace Does
+
+- Normalizes agent traces into a common schema
+- Runs deterministic reliability rules
+- Produces evidence-backed findings
+- Exposes a CLI and JSON report format
+- Provides a local FastAPI backend and React Trace Inspector for visual review
+
+## Reliability Rules
 
 - `MMTRACE001` - Missing Observation
 - `MMTRACE002` - Observation Not In Model Context
@@ -40,14 +33,36 @@ MMTrace focuses on deterministic evidence checks. When evidence is absent, rules
 - `MMTRACE005` - Stale Observation
 - `MMTRACE006` - Missing Post-Action Verification
 
-Not every adapter can provide the evidence needed for every rule. For example, Browser Use history currently does not include the actual model input messages, so `MMTRACE002` is usually not evaluable for ordinary Browser Use exports.
+Not every adapter can provide the evidence needed for every rule. Implemented does not mean evaluable.
 
-## Quick Start
+## Architecture
+
+```text
+Agent Trace
+    |
+    v
+Adapter
+    |
+    v
+MMTrace Core
+    |-- CLI / JSON Report
+    |
+    `-- FastAPI
+            |
+            v
+       Trace Inspector
+```
+
+MMTrace Core owns schema, adapters, deterministic checks, and reports. FastAPI owns HTTP transport, uploads, temporary screenshot artifacts, and serialization. React owns visualization and interaction only.
+
+Web artifact URLs are transport-layer data and are not written into `Trace`, `Observation`, `Finding`, or `Report`.
+
+## CLI Quick Start
 
 Install in editable mode:
 
 ```bash
-pip install -e .
+python3 -m pip install -e .
 ```
 
 Check a standard MMTrace JSON file:
@@ -77,55 +92,63 @@ mmtrace check trajectory.json \
   --rule MMTRACE003
 ```
 
-## Supported Adapters
+## Trace Inspector
 
-### Generic JSON
+The Web MVP provides a local Trace Inspector with:
 
-Use the default adapter for JSON files already shaped as MMTrace `Trace` objects:
+- Adapter selection for `generic` and `browser-use`
+- JSON trace upload
+- Optional screenshot ZIP upload
+- Trace summary, trajectory list, step inspector, and findings panel
+- Real screenshot viewing through `/api/artifacts/...`
+- Before / After observation switching when both screenshots are available
+
+Screenshot artifacts are optional. If no ZIP is uploaded, analysis still works and the UI reports screenshot artifacts as unavailable.
+
+## Run Locally
+
+Backend:
 
 ```bash
-mmtrace check trajectory.json
+python3 -m pip install -e ".[web,test]"
+python3 -m uvicorn web.backend.app:app \
+  --host 127.0.0.1 \
+  --port 8000
 ```
 
-### Browser Use
-
-Use the Browser Use adapter for offline `AgentHistoryList.save_to_file()` exports:
+Frontend:
 
 ```bash
-mmtrace check history.json --adapter browser-use
+cd web/frontend
+npm ci
+npm run dev
 ```
 
-The Browser Use adapter maps saved history evidence faithfully. It does not fabricate model inputs, timestamps, viewport dimensions, coordinate transforms, or success statuses.
+Open the URL printed by Vite. The frontend uses a development proxy for `/api`, so it does not require CORS configuration for local development.
 
-## Rules
-
-### MMTRACE001 - Missing Observation
-
-Flags visual/environment-dependent actions such as `click`, `drag`, or `move` when the step has no corresponding observation.
-
-### MMTRACE002 - Observation Not In Model Context
-
-Flags a captured observation that is not referenced by the model input context.
-
-### MMTRACE003 - Coordinate Out Of Frame
-
-Flags explicit viewport/image coordinates that fall outside the applicable frame.
-
-### MMTRACE004 - Coordinate Space Mismatch
-
-Flags explicit coordinate-space conflicts when expected coordinate-space metadata exists and no transform is available.
-
-### MMTRACE005 - Stale Observation
-
-Flags an action using an older observation when a newer environment observation exists before the action timestamp.
-
-### MMTRACE006 - Missing Post-Action Verification
-
-Flags successful state-changing actions that lack post-action verification evidence.
-
-## Example
+## Using Browser Use Example
 
 A real Browser Use trajectory is included:
+
+```text
+examples/browser_use_real/history.json
+```
+
+Use adapter:
+
+```text
+browser-use
+```
+
+For screenshots, create a temporary ZIP from:
+
+```text
+examples/browser_use_real/screenshots/
+```
+
+Upload that ZIP as the optional Screenshot bundle in the Trace Inspector. Do not store temporary ZIP files in the repository.
+
+CLI:
 
 ```bash
 mmtrace check examples/browser_use_real/history.json --adapter browser-use
@@ -139,22 +162,23 @@ Errors: 0
 Warnings: 0
 ```
 
-The example preserves 4 Browser Use source actions as 4 MMTrace actions.
+The example preserves 4 Browser Use source actions as 4 MMTrace actions. Its 3 saved screenshot observations can be mapped by the Web Inspector when a screenshot ZIP is uploaded.
 
 ## Evidence Limitations
 
 Implemented does not mean evaluable.
 
-Rules only run when the required evidence is present. No finding does not necessarily mean every rule had enough evidence to evaluate the trace.
+Rules only run when the required evidence is present. No finding does not prove the agent was correct, safe, or fully evaluated.
 
-Browser Use ordinary history currently provides:
+Browser Use ordinary history currently has important limitations:
 
-- `MMTRACE001`: partially evaluable
-- `MMTRACE002`: usually not evaluable because true model input messages are not saved
-- `MMTRACE003`: evaluable only when explicit coordinates and reliable dimensions are available
-- `MMTRACE004`: usually not evaluable because expected coordinate-space / transform metadata is absent
-- `MMTRACE005`: not currently evaluable from Browser Use step timing because the adapter does not treat step-level timing as precise observation/action timestamps
-- `MMTRACE006`: partially evaluable
+- It does not prove true model input messages, so `MMTRACE002` is usually not evaluable.
+- Coordinates, viewport dimensions, and coordinate-space metadata may be unavailable.
+- Exact observation/action timestamps may be unavailable.
+- Not every implemented rule is evaluable on every trace.
+- Absence of findings is not proof of agent correctness.
+
+The Trace Inspector keeps this distinction explicit. Its PASS state means no deterministic reliability findings were found for the currently evaluable evidence.
 
 ## Exit Codes
 
@@ -166,20 +190,45 @@ Browser Use ordinary history currently provides:
 
 Warnings do not cause exit code `1`.
 
-## Development / Tests
+## Development
 
-Run the test suite:
+Python:
 
 ```bash
 python3 -m pytest -q
-```
-
-Check installed package requirements:
-
-```bash
 python3 -m pip check
 ```
 
+Frontend:
+
+```bash
+cd web/frontend
+npm ci
+npm run typecheck
+npm run build
+```
+
+## CI
+
+GitHub Actions currently runs:
+
+- Python 3.11 and 3.12
+- `python -m pip install -e ".[web,test]"`
+- `python -m pytest -q`
+- `python -m pip check`
+- Node 20
+- `npm ci`
+- `npm run typecheck`
+- `npm run build`
+
+CI does not require secrets and does not call SiliconFlow, Browser Use, or any agent runtime.
+
+## Packaging Boundary
+
+The Python package is the MMTrace core package. The Web MVP is currently intended for source-checkout development from this repository.
+
+Do not assume that a wheel-only installation includes a standalone packaged frontend application.
+
 ## Project Status
 
-MMTrace is in early v0.1 development. The core deterministic pipeline is present, but evidence coverage depends on the adapter and source trace format.
+MMTrace is at v0.1 Core + Trace Inspector Web MVP. It is an early local-first reliability checker and inspector, not a production platform.

@@ -21,6 +21,7 @@ Trace summary:
 - Source actions: 4
 - MMTrace actions: 4
 - Source actions: `navigate`, `click`, `extract`, `done`
+- Screenshot files: `screenshots/step-2.png`, `screenshots/step-3.png`, `screenshots/step-4.png`
 
 The final Browser Use result marked the task as successful.
 
@@ -42,6 +43,14 @@ Findings: none
 
 The initial `navigate` action no longer triggers `MMTRACE001` after real-trace calibration, because initial navigation does not require a pre-existing page observation.
 
+Trace Inspector screenshot bundle:
+
+- Keep `history.json` and `screenshots/` unchanged.
+- Create a temporary ZIP from `screenshots/` outside the repository.
+- Upload `history.json` with adapter `browser-use`.
+- Upload the ZIP as the optional Screenshot bundle.
+- The Web Inspector maps 3 screenshot observations by `observation_id`.
+
 Rule evidence coverage for this trace:
 
 - MMTRACE001: EVALUABLE
@@ -50,3 +59,9 @@ Rule evidence coverage for this trace:
 - MMTRACE004: NOT EVALUABLE
 - MMTRACE005: NOT EVALUABLE
 - MMTRACE006: EVALUABLE
+
+Evidence limitations:
+
+- The Browser Use export does not include true model input messages.
+- Some coordinate, viewport, transform, and precise timing evidence is unavailable.
+- `PASS` means no deterministic findings were produced for currently evaluable evidence; it is not proof that every rule was evaluable or that the agent was correct.

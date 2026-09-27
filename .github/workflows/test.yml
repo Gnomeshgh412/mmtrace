@@ -24,10 +24,36 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[test]"
+          python -m pip install -e ".[web,test]"
 
       - name: Run tests
         run: python -m pytest -q
 
       - name: Check installed dependencies
         run: python -m pip check
+
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web/frontend
+        run: npm ci
+
+      - name: Typecheck frontend
+        working-directory: web/frontend
+        run: npm run typecheck
+
+      - name: Build frontend
+        working-directory: web/frontend
+        run: npm run build
