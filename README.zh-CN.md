@@ -12,9 +12,30 @@ Observation -> Model Context -> Action -> Execution -> Post-State
 
 MMTrace 刻意保持小而清晰。它不是通用 Agent 调试器、语义裁判、恢复框架、Dashboard 平台或 Agent runtime。
 
-使用 MMTrace 检查真实 Browser Use 运行轨迹。
+## 真实失败案例
 
-![MMTrace Trace Inspector](docs/assets/trace-inspector.png)
+MMTrace 分析了一条未经修改的公开 OSWorld 真实轨迹，该轨迹由
+Qwen3-VL-8B-Thinking 产生。
+
+![MMTrace OSWorld 真实失败案例](docs/assets/osworld-real-failure.png)
+
+该任务最终得分为 `0.0`。MMTrace 独立检测到两类共 11 个确定性可靠性检查结果：
+
+- 1 x `MMTRACE003` - 坐标越界
+- 10 x `MMTRACE005` - 陈旧观察
+
+其中 Step 17 存在一个非常直观的检查结果：
+
+```python
+pyautogui.dragTo(1493, 1080, duration=0.5)
+```
+
+当前画面尺寸为 `1920 x 1080`，因此 `y = 1080` 已超出合法范围：
+`0 <= y < 1080`。
+
+这些可靠性问题与任务失败出现在同一条真实轨迹中，但 MMTrace 不声称它们已经被证明是该任务失败的直接原因。
+
+数据来源：`UI-MOPD/OSWorld-Eval-Results`（OSWorld，Qwen3-VL-8B-Thinking）。
 
 ## Why MMTrace
 
@@ -83,6 +104,12 @@ mmtrace check trajectory.json
 mmtrace check history.json --adapter browser-use
 ```
 
+检查 OSWorld `traj.jsonl` 文件：
+
+```bash
+mmtrace check traj.jsonl --adapter osworld
+```
+
 输出机器可读 JSON：
 
 ```bash
@@ -102,7 +129,7 @@ mmtrace check trajectory.json \
 
 Web MVP 提供一个本地 Trace Inspector，包括：
 
-- `generic` 与 `browser-use` Adapter 选择
+- `generic`、`browser-use` 与 `osworld` Adapter 选择
 - JSON 轨迹上传
 - 可选 screenshot ZIP 上传
 - Trace summary、trajectory list、step inspector 和 findings panel
@@ -110,6 +137,10 @@ Web MVP 提供一个本地 Trace Inspector，包括：
 - 当 Before / After 两侧 screenshot 都存在时支持切换
 
 Screenshot artifacts 是可选 evidence。即使不上传 ZIP，分析流程仍会正常工作，UI 会明确显示 screenshot artifact unavailable。
+
+一条真实 Browser Use 运行轨迹；当前可评价规则未检测到确定性可靠性问题。
+
+![MMTrace Trace Inspector](docs/assets/trace-inspector.png)
 
 ## Run Locally
 

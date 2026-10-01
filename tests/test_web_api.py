@@ -1,4 +1,5 @@
 import json
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from web.backend.app import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REAL_HISTORY = Path(__file__).parents[1] / "examples" / "browser_use_real" / "history.json"
+REAL_OSWORLD = Path(__file__).parents[1] / "examples" / "osworld_real_failure" / "traj.jsonl"
 
 
 client = TestClient(app)
@@ -97,6 +99,14 @@ def write_zip_symlink(path: Path, name: str) -> None:
         archive.writestr(info, b"target")
 
 
+def build_osworld_artifact_zip() -> Path:
+    archive_path = Path(tempfile.NamedTemporaryFile(suffix=".zip", delete=False).name)
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for screenshot in REAL_OSWORLD.parent.glob("*.png"):
+            archive.write(screenshot, screenshot.name)
+    return archive_path
+
+
 def source_action_count(path: Path) -> int:
     data = json.loads(path.read_text(encoding="utf-8"))
     history = data.get("history") if isinstance(data, dict) else data
@@ -140,6 +150,18 @@ def test_analyze_browser_use_real_history() -> None:
     assert body["report"]["error_count"] == 0
     assert body["report"]["warning_count"] == 0
     assert action_count == source_action_count(REAL_HISTORY) == 4
+
+
+def test_analyze_osworld_real_failure() -> None:
+    archive = build_osworld_artifact_zip()
+    response = post_analyze_with_artifacts(REAL_OSWORLD, "osworld", archive)
+
+    body = response.json()
+    rule_ids = {finding["rule_id"] for finding in body["report"]["findings"]}
+    assert response.status_code == 200
+    assert body["report"]["status"] == "FAIL"
+    assert {"MMTRACE003", "MMTRACE005"} <= rule_ids
+    archive.unlink()
 
 
 def test_analyze_without_artifact_zip_keeps_empty_artifacts() -> None:

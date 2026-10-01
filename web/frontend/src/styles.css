@@ -497,6 +497,36 @@ h4 {
   padding-top: 14px;
 }
 
+.selected-finding-detail {
+  margin-top: 0;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--surface-muted);
+}
+
+.selected-finding-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 8px;
+  margin-bottom: 12px;
+}
+
+.selected-finding-header strong,
+.selected-finding-header .muted {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
+
+.all-findings-section {
+  margin-top: 16px;
+}
+
+.compact-heading {
+  margin-bottom: 10px;
+}
+
 .evidence-grid {
   grid-template-columns: minmax(90px, 150px) minmax(0, 1fr);
   margin-bottom: 14px;
@@ -542,6 +572,17 @@ h4 {
 
   .screenshot-viewer {
     min-height: 210px;
+  }
+}
+
+@media (min-width: 981px) {
+  .app-shell {
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .inspector-layout {
+    overflow: hidden;
   }
 }
 

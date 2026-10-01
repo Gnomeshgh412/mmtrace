@@ -64,43 +64,59 @@ export function FindingsPanel({
             <p>Not every implemented rule may be evaluable from this trace.</p>
           </div>
         ) : (
-          <div className="finding-list">
-            {findings.map((finding) => {
-              const selected = selectedFinding
-                ? findingKey(finding) === findingKey(selectedFinding)
-                : false;
-              const relatedToStep = finding.step_id === selectedStepId;
-
-              return (
-                <button
-                  type="button"
-                  key={findingKey(finding)}
-                  className={`finding-card ${selected ? "selected" : ""} ${
-                    relatedToStep ? "related" : ""
-                  }`}
-                  onClick={() => onSelectFinding(finding)}
-                >
-                  <span className={`severity-badge severity-${finding.severity.toLowerCase()}`}>
-                    {finding.severity}
+          <>
+            {selectedFinding && (
+              <section className="finding-detail selected-finding-detail" aria-label="Selected finding detail">
+                <div className="selected-finding-header">
+                  <span className={`severity-badge severity-${selectedFinding.severity.toLowerCase()}`}>
+                    {selectedFinding.severity}
                   </span>
-                  <span className="finding-rule">{finding.rule_id}</span>
-                  <strong>{finding.title}</strong>
-                  <span>{finding.step_id ?? "Trace-level"}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+                  <span className="finding-rule">{selectedFinding.rule_id}</span>
+                  <strong>{selectedFinding.title}</strong>
+                  <span className="muted">{selectedFinding.step_id ?? "Trace-level"}</span>
+                </div>
+                <h3>Evidence</h3>
+                <EvidenceList evidence={selectedFinding.evidence} />
+                <h4>Explanation</h4>
+                <p>{selectedFinding.explanation ?? "Not available"}</p>
+                <h4>Suggestion</h4>
+                <p>{selectedFinding.suggestion ?? "Not available"}</p>
+              </section>
+            )}
 
-        {selectedFinding && (
-          <section className="finding-detail" aria-label="Finding detail">
-            <h3>{selectedFinding.title}</h3>
-            <EvidenceList evidence={selectedFinding.evidence} />
-            <h4>Explanation</h4>
-            <p>{selectedFinding.explanation ?? "Not available"}</p>
-            <h4>Suggestion</h4>
-            <p>{selectedFinding.suggestion ?? "Not available"}</p>
-          </section>
+            <section className="all-findings-section" aria-label="All findings">
+              <div className="panel-heading compact-heading">
+                <h3>All Findings</h3>
+                <span className="muted">{findings.length} total</span>
+              </div>
+              <div className="finding-list">
+                {findings.map((finding) => {
+                  const selected = selectedFinding
+                    ? findingKey(finding) === findingKey(selectedFinding)
+                    : false;
+                  const relatedToStep = finding.step_id === selectedStepId;
+
+                  return (
+                    <button
+                      type="button"
+                      key={findingKey(finding)}
+                      className={`finding-card ${selected ? "selected" : ""} ${
+                        relatedToStep ? "related" : ""
+                      }`}
+                      onClick={() => onSelectFinding(finding)}
+                    >
+                      <span className={`severity-badge severity-${finding.severity.toLowerCase()}`}>
+                        {finding.severity}
+                      </span>
+                      <span className="finding-rule">{finding.rule_id}</span>
+                      <strong>{finding.title}</strong>
+                      <span>{finding.step_id ?? "Trace-level"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          </>
         )}
       </section>
       <section className="coverage-section" aria-label="Rule coverage">

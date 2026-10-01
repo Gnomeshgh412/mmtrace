@@ -35,6 +35,7 @@ export function TraceLoader({
         >
           <option value="generic">generic</option>
           <option value="browser-use">browser-use</option>
+          <option value="osworld">osworld</option>
         </select>
       </div>
 
@@ -43,7 +44,7 @@ export function TraceLoader({
         <input
           id="trace-file"
           type="file"
-          accept=".json,application/json"
+          accept=".json,.jsonl,application/json,application/x-ndjson"
           disabled={isLoading}
           onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
         />

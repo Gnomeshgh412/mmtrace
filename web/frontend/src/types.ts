@@ -91,7 +91,7 @@ export interface Artifacts {
   screenshots: Record<string, string>;
 }
 
-export type AdapterName = "generic" | "browser-use";
+export type AdapterName = "generic" | "browser-use" | "osworld";
 
 export interface ApiErrorPayload {
   error?: {

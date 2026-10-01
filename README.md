@@ -12,9 +12,32 @@ Observation -> Model Context -> Action -> Execution -> Post-State
 
 It is intentionally small. MMTrace is not a general agent debugger, semantic judge, recovery framework, dashboard platform, or agent runtime.
 
-Real Browser Use trajectory inspected with MMTrace.
+## Real-World Failure Case
 
-![MMTrace Trace Inspector](docs/assets/trace-inspector.png)
+MMTrace analyzed an unmodified public OSWorld trajectory produced by
+Qwen3-VL-8B-Thinking.
+
+![MMTrace OSWorld real failure](docs/assets/osworld-real-failure.png)
+
+The task itself received a score of `0.0`. MMTrace independently surfaced
+11 deterministic reliability findings across two rule classes:
+
+- 1 x `MMTRACE003` - Coordinate Out Of Frame
+- 10 x `MMTRACE005` - Stale Observation
+
+One concrete finding occurred at Step 17:
+
+```python
+pyautogui.dragTo(1493, 1080, duration=0.5)
+```
+
+with a `1920 x 1080` frame, making `y = 1080` outside the valid coordinate range
+`0 <= y < 1080`.
+
+These findings occur in the same failed trajectory, but MMTrace does not claim
+that they are proven causal explanations for the task failure.
+
+Source: `UI-MOPD/OSWorld-Eval-Results` (OSWorld, Qwen3-VL-8B-Thinking).
 
 ## Why MMTrace
 
@@ -83,6 +106,12 @@ Check a Browser Use history file:
 mmtrace check history.json --adapter browser-use
 ```
 
+Check an OSWorld `traj.jsonl` file:
+
+```bash
+mmtrace check traj.jsonl --adapter osworld
+```
+
 Emit machine-readable JSON:
 
 ```bash
@@ -102,7 +131,7 @@ mmtrace check trajectory.json \
 
 The Web MVP provides a local Trace Inspector with:
 
-- Adapter selection for `generic` and `browser-use`
+- Adapter selection for `generic`, `browser-use`, and `osworld`
 - JSON trace upload
 - Optional screenshot ZIP upload
 - Trace summary, trajectory list, step inspector, and findings panel
@@ -110,6 +139,11 @@ The Web MVP provides a local Trace Inspector with:
 - Before / After observation switching when both screenshots are available
 
 Screenshot artifacts are optional. If no ZIP is uploaded, analysis still works and the UI reports screenshot artifacts as unavailable.
+
+A real Browser Use trajectory with no deterministic findings from the currently
+evaluable rules.
+
+![MMTrace Trace Inspector](docs/assets/trace-inspector.png)
 
 ## Run Locally
 

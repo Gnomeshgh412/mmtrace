@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from mmtrace.adapters.base import AdapterError, BaseAdapter
 from mmtrace.adapters.browser_use import BrowserUseAdapter
 from mmtrace.adapters.generic_json import GenericJSONAdapter
+from mmtrace.adapters.osworld import OSWorldAdapter
 from mmtrace.engine import CheckEngine
 from mmtrace.schema.trace import Observation, Trace
 
@@ -48,13 +49,29 @@ async def analyze(
         else None
     )
     analysis_id = str(uuid4())
+    artifact_root: Path | None = None
+    extracted_artifacts: list[str] = []
 
     try:
-        trace = selected_adapter.load(temp_path)
+        if artifact_zip_path is not None:
+            artifact_root = Path(tempfile.mkdtemp(prefix=f"mmtrace-artifacts-{analysis_id}-"))
+            extracted_artifacts = _extract_screenshot_zip(artifact_zip_path, artifact_root)
+
+        load_path = temp_path
+        if adapter == "osworld" and artifact_root is not None:
+            load_path = artifact_root / _safe_uploaded_filename(trace_file.filename, "traj.jsonl")
+            shutil.copyfile(temp_path, load_path)
+
+        trace = selected_adapter.load(load_path)
         report = CheckEngine().run(trace)
         screenshot_mapping = (
-            _prepare_screenshot_artifacts(analysis_id, trace, artifact_zip_path)
-            if artifact_zip_path is not None
+            _register_screenshot_artifacts(
+                analysis_id,
+                trace,
+                artifact_root,
+                extracted_artifacts,
+            )
+            if artifact_root is not None
             else {}
         )
         return {
@@ -75,6 +92,8 @@ async def analyze(
         temp_path.unlink(missing_ok=True)
         if artifact_zip_path is not None:
             artifact_zip_path.unlink(missing_ok=True)
+        if artifact_root is not None and analysis_id not in _ARTIFACT_REGISTRY:
+            shutil.rmtree(artifact_root, ignore_errors=True)
 
 
 @app.get("/api/artifacts/{analysis_id}/{artifact_path:path}")
@@ -104,6 +123,8 @@ def _adapter_for_name(name: str) -> BaseAdapter:
         return GenericJSONAdapter()
     if name == "browser-use":
         return BrowserUseAdapter()
+    if name == "osworld":
+        return OSWorldAdapter()
     raise _error_response(
         status_code=400,
         code="UNKNOWN_ADAPTER",
@@ -160,6 +181,15 @@ def _prepare_screenshot_artifacts(
     except Exception:
         shutil.rmtree(artifact_root, ignore_errors=True)
         raise
+    return _register_screenshot_artifacts(analysis_id, trace, artifact_root, extracted)
+
+
+def _register_screenshot_artifacts(
+    analysis_id: str,
+    trace: Trace,
+    artifact_root: Path,
+    extracted: list[str],
+) -> dict[str, str]:
     if not extracted:
         _ARTIFACT_REGISTRY[analysis_id] = artifact_root
         return {}
@@ -188,6 +218,16 @@ def _prepare_screenshot_artifacts(
         )
 
     return mapping
+
+
+def _safe_uploaded_filename(filename: str | None, fallback: str) -> str:
+    if not filename:
+        return fallback
+    try:
+        normalized = _normalize_artifact_path(Path(filename).name)
+    except HTTPException:
+        return fallback
+    return normalized or fallback
 
 
 def _extract_screenshot_zip(archive_path: Path, destination: Path) -> list[str]:

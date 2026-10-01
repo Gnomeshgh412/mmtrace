@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { Finding, Severity, Step } from "../types";
 
 interface TrajectoryListProps {
@@ -29,8 +30,32 @@ export function TrajectoryList({
   selectedStepId,
   onSelectStep,
 }: TrajectoryListProps) {
+  const panelRef = useRef<HTMLElement | null>(null);
+  const stepRefs = useRef(new Map<string, HTMLButtonElement>());
+
+  useEffect(() => {
+    if (!selectedStepId) return;
+
+    const panel = panelRef.current;
+    const stepButton = stepRefs.current.get(selectedStepId);
+    if (!panel || !stepButton) return;
+
+    const panelRect = panel.getBoundingClientRect();
+    const stepRect = stepButton.getBoundingClientRect();
+    const nextTop =
+      panel.scrollTop +
+      stepRect.top -
+      panelRect.top -
+      (panel.clientHeight - stepButton.clientHeight) / 2;
+
+    panel.scrollTo({
+      top: Math.max(0, nextTop),
+      behavior: "smooth",
+    });
+  }, [selectedStepId]);
+
   return (
-    <aside className="panel trajectory-panel" aria-label="Trajectory">
+    <aside ref={panelRef} className="panel trajectory-panel" aria-label="Trajectory">
       <div className="panel-heading">
         <h2>Trajectory</h2>
       </div>
@@ -44,6 +69,13 @@ export function TrajectoryList({
             <li key={step.step_id}>
               <button
                 type="button"
+                ref={(node) => {
+                  if (node) {
+                    stepRefs.current.set(step.step_id, node);
+                  } else {
+                    stepRefs.current.delete(step.step_id);
+                  }
+                }}
                 className={`step-button ${selected ? "selected" : ""}`}
                 onClick={() => onSelectStep(step.step_id)}
                 aria-current={selected ? "step" : undefined}

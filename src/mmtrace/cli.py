@@ -10,6 +10,7 @@ from typing import TextIO
 from mmtrace.adapters.base import AdapterError
 from mmtrace.adapters.browser_use import BrowserUseAdapter
 from mmtrace.adapters.generic_json import GenericJSONAdapter
+from mmtrace.adapters.osworld import OSWorldAdapter
 from mmtrace.engine import DEFAULT_CHECKS, CheckEngine
 from mmtrace.report import format_report
 from mmtrace.schema.finding import ReportStatus
@@ -32,7 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     check_parser = subparsers.add_parser("check", help="check an MMTrace JSON trajectory")
     check_parser.add_argument("input", help="path to an MMTrace JSON trajectory")
-    check_parser.add_argument("--adapter", choices=["generic", "browser-use"], default="generic")
+    check_parser.add_argument(
+        "--adapter",
+        choices=["generic", "browser-use", "osworld"],
+        default="generic",
+    )
     check_parser.add_argument("--format", choices=["text", "json"], default="text")
     check_parser.add_argument("--output", help="write report to this path")
     check_parser.add_argument("--rule", help="run only the specified rule ID")
@@ -78,6 +83,8 @@ def _adapter_for_name(name: str):
         return GenericJSONAdapter()
     if name == "browser-use":
         return BrowserUseAdapter()
+    if name == "osworld":
+        return OSWorldAdapter()
     raise ValueError(f"unsupported adapter: {name}")
 
 

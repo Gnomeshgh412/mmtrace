@@ -4,6 +4,7 @@ from pathlib import Path
 from mmtrace.cli import main
 
 FIXTURES = Path(__file__).parent / "fixtures"
+REAL_OSWORLD = Path(__file__).parents[1] / "examples" / "osworld_real_failure" / "traj.jsonl"
 
 
 def test_cli_valid_trace_exits_zero(capsys) -> None:
@@ -129,3 +130,14 @@ def test_cli_unknown_rule_exits_two(capsys) -> None:
     captured = capsys.readouterr()
     assert exit_code == 2
     assert "unknown rule ID" in captured.err
+
+
+def test_cli_osworld_adapter_reports_real_failure(capsys) -> None:
+    exit_code = main(["check", str(REAL_OSWORLD), "--adapter", "osworld", "--format", "json"])
+
+    captured = capsys.readouterr()
+    parsed = json.loads(captured.out)
+    rule_ids = {finding["rule_id"] for finding in parsed["findings"]}
+    assert exit_code == 1
+    assert parsed["status"] == "FAIL"
+    assert {"MMTRACE003", "MMTRACE005"} <= rule_ids
