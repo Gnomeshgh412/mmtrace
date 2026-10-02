@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-面向多模态 / Computer-Use Agent 的确定性可靠性检查与轨迹（Trace）检查工具。
+面向多模态与 Computer-Use Agent 的确定性可靠性检查与轨迹可视化分析工具。
 
 MMTrace 用于验证 Agent 轨迹中是否存在可信的证据链：
 
@@ -41,10 +41,27 @@ NameError: name 'pyautoguiBUTTONDOWN' is not defined
 
 来源：
 
-- Dataset: `Hcompany/trajectories`
-- Benchmark: OSWorld
+- Dataset: [`Hcompany/trajectories`](https://huggingface.co/datasets/Hcompany/trajectories)
+- Benchmark: [OSWorld](https://github.com/xlang-ai/OSWorld)
 - Model: Holo4 27B
 - Trajectory: `libreoffice-calc-13-23ff35a8`
+
+在本地复现该示例：
+
+```bash
+mmtrace check \
+  examples/holo4_real_execution_failure/trajectory.json \
+  --adapter holo4
+```
+
+预期结果：
+
+```text
+Status: FAIL
+Errors: 5
+Warnings: 0
+MMTRACE007: 5
+```
 
 ## Why MMTrace
 
@@ -62,13 +79,15 @@ MMTrace 专注于记录证据上的确定性检查。当某条规则所需的证
 
 ## Reliability Rules
 
-- `MMTRACE001` - Missing Observation
-- `MMTRACE002` - Observation Not In Model Context
-- `MMTRACE003` - Coordinate Out Of Frame
-- `MMTRACE004` - Coordinate Space Mismatch
-- `MMTRACE005` - Stale Observation
-- `MMTRACE006` - Missing Post-Action Verification
-- `MMTRACE007` - Explicit Execution Failure (ERROR)
+| Rule | Finding | Severity |
+| --- | --- | --- |
+| `MMTRACE001` | Missing Observation | ERROR |
+| `MMTRACE002` | Observation Not In Model Context | ERROR |
+| `MMTRACE003` | Coordinate Out Of Frame | ERROR |
+| `MMTRACE004` | Coordinate Space Mismatch | ERROR |
+| `MMTRACE005` | Stale Observation | WARNING |
+| `MMTRACE006` | Missing Post-Action Verification | WARNING |
+| `MMTRACE007` | Explicit Execution Failure | ERROR |
 
 并不是每个适配器（Adapter）都能提供每条规则需要的 evidence。IMPLEMENTED 不等于 EVALUABLE。
 
@@ -175,43 +194,21 @@ npm run dev
 
 打开 Vite 输出的 URL。前端通过开发代理访问 `/api`，因此本地开发不需要额外配置 CORS。
 
-## Using Browser Use Example
+## 内置真实案例
 
-项目包含一条真实 Browser Use 轨迹：
+| Example | Adapter | Result | Purpose |
+| --- | --- | --- | --- |
+| Holo4 / OSWorld | `holo4` | FAIL · 5 ERROR | 真实 explicit execution failure 验证 |
+| OSWorld | `osworld` | FAIL · 1 ERROR / 10 WARNING | 坐标与 stale-observation 回归 |
+| Browser Use | `browser-use` | PASS | 真实轨迹 / false-positive 回归 |
 
-```text
-examples/browser_use_real/history.json
-```
+Paths:
 
-使用 Adapter：
+- `examples/holo4_real_execution_failure/`
+- `examples/osworld_real_failure/`
+- `examples/browser_use_real/`
 
-```text
-browser-use
-```
-
-如需查看 screenshot，可从以下目录创建一个临时 ZIP：
-
-```text
-examples/browser_use_real/screenshots/
-```
-
-在 Trace Inspector 中上传该 ZIP 作为 optional Screenshot bundle。不要把临时 ZIP 存入仓库。
-
-CLI：
-
-```bash
-mmtrace check examples/browser_use_real/history.json --adapter browser-use
-```
-
-当前结果：
-
-```text
-Status: PASS
-Errors: 0
-Warnings: 0
-```
-
-该示例保留了 4 个 Browser Use source actions，并映射为 4 个 MMTrace actions。上传 screenshot ZIP 后，Web Inspector 可以映射其中 3 个已保存 screenshot observations。
+各示例目录中包含 provenance 与复现细节。
 
 ## Evidence Limitations
 
@@ -280,4 +277,12 @@ Python package 是 MMTrace core package。当前 Web MVP 面向从本仓库 sour
 
 ## Project Status
 
-MMTrace 当前处于 v0.1 Core + Trace Inspector Web MVP 阶段。它是一个早期、local-first 的可靠性检查与检查器，不是生产平台。
+MMTrace v0.1.0 是 Core + Trace Inspector MVP 的首个公开版本。
+
+当前仍是一个早期、local-first 的可靠性检查与轨迹分析工具，并非生产级平台。
+
+## License
+
+MMTrace 采用 MIT License 发布。
+
+第三方数据集、benchmark 及其 artifacts 仍分别受各自许可证与使用条款约束。

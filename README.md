@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Deterministic reliability checking and trace inspection for multimodal / computer-use agents.
+Deterministic reliability checking and trace inspection for multimodal and computer-use agents.
 
 MMTrace verifies whether an agent trajectory has a trustworthy evidence chain:
 
@@ -38,10 +38,27 @@ that they are proven to be the sole or direct cause of the overall task failure.
 
 Source:
 
-- Dataset: `Hcompany/trajectories`
-- Benchmark: OSWorld
+- Dataset: [`Hcompany/trajectories`](https://huggingface.co/datasets/Hcompany/trajectories)
+- Benchmark: [OSWorld](https://github.com/xlang-ai/OSWorld)
 - Model: Holo4 27B
 - Trajectory: `libreoffice-calc-13-23ff35a8`
+
+Reproduce the example locally:
+
+```bash
+mmtrace check \
+  examples/holo4_real_execution_failure/trajectory.json \
+  --adapter holo4
+```
+
+Expected result:
+
+```text
+Status: FAIL
+Errors: 5
+Warnings: 0
+MMTRACE007: 5
+```
 
 ## Why MMTrace
 
@@ -59,13 +76,15 @@ MMTrace focuses on deterministic checks over recorded evidence. When required ev
 
 ## Reliability Rules
 
-- `MMTRACE001` - Missing Observation
-- `MMTRACE002` - Observation Not In Model Context
-- `MMTRACE003` - Coordinate Out Of Frame
-- `MMTRACE004` - Coordinate Space Mismatch
-- `MMTRACE005` - Stale Observation
-- `MMTRACE006` - Missing Post-Action Verification
-- `MMTRACE007` - Explicit Execution Failure (ERROR)
+| Rule | Finding | Severity |
+| --- | --- | --- |
+| `MMTRACE001` | Missing Observation | ERROR |
+| `MMTRACE002` | Observation Not In Model Context | ERROR |
+| `MMTRACE003` | Coordinate Out Of Frame | ERROR |
+| `MMTRACE004` | Coordinate Space Mismatch | ERROR |
+| `MMTRACE005` | Stale Observation | WARNING |
+| `MMTRACE006` | Missing Post-Action Verification | WARNING |
+| `MMTRACE007` | Explicit Execution Failure | ERROR |
 
 Not every adapter can provide the evidence needed for every rule. Implemented does not mean evaluable.
 
@@ -172,43 +191,21 @@ npm run dev
 
 Open the URL printed by Vite. The frontend uses a development proxy for `/api`, so it does not require CORS configuration for local development.
 
-## Using Browser Use Example
+## Included Real Examples
 
-A real Browser Use trajectory is included:
+| Example | Adapter | Result | Purpose |
+| --- | --- | --- | --- |
+| Holo4 / OSWorld | `holo4` | FAIL · 5 ERROR | Real explicit execution failure validation |
+| OSWorld | `osworld` | FAIL · 1 ERROR / 10 WARNING | Coordinate and stale-observation regression |
+| Browser Use | `browser-use` | PASS | Real trace / false-positive regression |
 
-```text
-examples/browser_use_real/history.json
-```
+Paths:
 
-Use adapter:
+- `examples/holo4_real_execution_failure/`
+- `examples/osworld_real_failure/`
+- `examples/browser_use_real/`
 
-```text
-browser-use
-```
-
-For screenshots, create a temporary ZIP from:
-
-```text
-examples/browser_use_real/screenshots/
-```
-
-Upload that ZIP as the optional Screenshot bundle in the Trace Inspector. Do not store temporary ZIP files in the repository.
-
-CLI:
-
-```bash
-mmtrace check examples/browser_use_real/history.json --adapter browser-use
-```
-
-Current result:
-
-```text
-Status: PASS
-Errors: 0
-Warnings: 0
-```
-
-The example preserves 4 Browser Use source actions as 4 MMTrace actions. Its 3 saved screenshot observations can be mapped by the Web Inspector when a screenshot ZIP is uploaded.
+See each example directory for provenance and reproduction details.
 
 ## Evidence Limitations
 
@@ -277,4 +274,12 @@ Do not assume that a wheel-only installation includes a standalone packaged fron
 
 ## Project Status
 
-MMTrace is at v0.1 Core + Trace Inspector Web MVP. It is an early local-first reliability checker and inspector, not a production platform.
+MMTrace v0.1.0 is the first public release of the Core + Trace Inspector MVP.
+
+It is an early, local-first reliability checker and trace inspector, not a production platform.
+
+## License
+
+MMTrace is released under the MIT License.
+
+Third-party datasets and benchmark artifacts remain subject to their respective licenses and terms.
