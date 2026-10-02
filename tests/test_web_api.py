@@ -164,6 +164,43 @@ def test_analyze_osworld_real_failure() -> None:
     archive.unlink()
 
 
+def test_analyze_holo4_trace(tmp_path: Path) -> None:
+    trace = tmp_path / "holo4.json"
+    trace.write_text(
+        json.dumps(
+            {
+                "id": "holo4-web-fixture",
+                "model": "Holo4 27B",
+                "benchmark": "AutomationBench",
+                "instruction": "Fetch a missing spreadsheet.",
+                "steps": [
+                    {
+                        "calls": [
+                            {
+                                "name": "api_fetch",
+                                "args": {
+                                    "method": "GET",
+                                    "url": "https://sheets.googleapis.com/v4/spreadsheets/missing",
+                                },
+                            }
+                        ],
+                        "results": ['{"error": "Spreadsheet not found"}'],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    response = post_analyze(trace, "holo4")
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["trace"]["metadata"]["source"] == "holo4"
+    assert body["report"]["status"] == "FAIL"
+    assert body["report"]["findings"][0]["rule_id"] == "MMTRACE007"
+
+
 def test_analyze_without_artifact_zip_keeps_empty_artifacts() -> None:
     response = post_analyze(FIXTURES / "valid_trace.json", "generic")
 

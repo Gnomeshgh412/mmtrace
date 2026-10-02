@@ -433,6 +433,36 @@ h4 {
   overflow-wrap: anywhere;
 }
 
+.evidence-value {
+  overflow-wrap: anywhere;
+}
+
+.evidence-error {
+  display: grid;
+  gap: 8px;
+}
+
+.evidence-error-text {
+  white-space: pre-wrap;
+}
+
+.evidence-toggle {
+  justify-self: start;
+  min-height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.evidence-toggle:hover,
+.evidence-toggle:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .empty-copy {
   color: var(--muted);
 }

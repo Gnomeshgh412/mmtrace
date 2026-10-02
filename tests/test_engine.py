@@ -110,6 +110,7 @@ def test_engine_default_checks_are_loaded_in_stable_order() -> None:
         "MMTRACE004",
         "MMTRACE005",
         "MMTRACE006",
+        "MMTRACE007",
     ]
 
 
@@ -173,6 +174,12 @@ def test_engine_reports_multiple_rules_in_one_trace() -> None:
                     "action": {"action_id": "action-005", "type": "click"},
                     "execution": {"status": "success"},
                 },
+                {
+                    "step_id": "step-006",
+                    "observation": {"observation_id": "obs-006"},
+                    "action": {"action_id": "action-006", "type": "shell"},
+                    "execution": {"status": "failed", "error": "exit_code 1"},
+                },
             ],
         }
     )
@@ -180,7 +187,7 @@ def test_engine_reports_multiple_rules_in_one_trace() -> None:
     report = CheckEngine().run(trace)
 
     assert report.status is ReportStatus.FAIL
-    assert report.error_count == 3
+    assert report.error_count == 4
     assert report.warning_count == 2
     assert report.info_count == 0
     assert [finding.rule_id for finding in report.findings] == [
@@ -189,4 +196,5 @@ def test_engine_reports_multiple_rules_in_one_trace() -> None:
         "MMTRACE003",
         "MMTRACE005",
         "MMTRACE006",
+        "MMTRACE007",
     ]

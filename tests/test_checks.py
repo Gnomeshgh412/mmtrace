@@ -2,6 +2,7 @@ from mmtrace.checks.coordinate import (
     CoordinateOutOfFrameCheck,
     CoordinateSpaceMismatchCheck,
 )
+from mmtrace.checks.execution import ExplicitExecutionFailureCheck
 from mmtrace.checks.observation import (
     MissingObservationCheck,
     ObservationNotInModelContextCheck,
@@ -576,3 +577,87 @@ def test_mmtrace006_does_not_fire_when_execution_failed() -> None:
     findings = MissingPostActionVerificationCheck().run(trace)
 
     assert findings == []
+
+
+def test_mmtrace007_fires_for_failed_action_execution() -> None:
+    trace = trace_with_steps(
+        [
+            {
+                "step_id": "step-001",
+                "action": {"action_id": "action-001", "type": "shell"},
+                "execution": {"status": "failed", "error": "exit_code 1"},
+            }
+        ]
+    )
+
+    findings = ExplicitExecutionFailureCheck().run(trace)
+
+    assert len(findings) == 1
+    assert findings[0].rule_id == "MMTRACE007"
+    assert findings[0].severity is Severity.ERROR
+    assert findings[0].step_id == "step-001"
+    assert findings[0].evidence == {
+        "execution_status": "failed",
+        "action_type": "shell",
+        "error": "exit_code 1",
+    }
+
+
+def test_mmtrace007_does_not_fire_for_success_or_unknown_execution() -> None:
+    trace = trace_with_steps(
+        [
+            {
+                "step_id": "step-success",
+                "action": {"action_id": "action-001", "type": "shell"},
+                "execution": {"status": "success"},
+            },
+            {
+                "step_id": "step-unknown",
+                "action": {"action_id": "action-002", "type": "shell"},
+                "execution": {"status": "unknown"},
+            },
+        ]
+    )
+
+    findings = ExplicitExecutionFailureCheck().run(trace)
+
+    assert findings == []
+
+
+def test_mmtrace007_does_not_fire_without_execution_or_action() -> None:
+    trace = trace_with_steps(
+        [
+            {
+                "step_id": "step-no-execution",
+                "action": {"action_id": "action-001", "type": "shell"},
+            },
+            {
+                "step_id": "step-no-action",
+                "execution": {"status": "failed", "error": "exit_code 1"},
+            },
+        ]
+    )
+
+    findings = ExplicitExecutionFailureCheck().run(trace)
+
+    assert findings == []
+
+
+def test_mmtrace007_fires_without_fabricating_missing_error_text() -> None:
+    trace = trace_with_steps(
+        [
+            {
+                "step_id": "step-001",
+                "action": {"action_id": "action-001", "type": "api_fetch"},
+                "execution": {"status": "failed"},
+            }
+        ]
+    )
+
+    findings = ExplicitExecutionFailureCheck().run(trace)
+
+    assert len(findings) == 1
+    assert findings[0].evidence == {
+        "execution_status": "failed",
+        "action_type": "api_fetch",
+    }

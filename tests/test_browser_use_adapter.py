@@ -71,6 +71,20 @@ def test_browser_use_execution_failed_maps_error() -> None:
     assert execution.error == "element not found"
 
 
+def test_browser_use_error_result_triggers_mmtrace007() -> None:
+    trace = load_browser_use_fixture()
+    report = CheckEngine().run(trace)
+    findings = [finding for finding in report.findings if finding.rule_id == "MMTRACE007"]
+
+    assert len(findings) == 1
+    assert findings[0].step_id == "1"
+    assert findings[0].evidence == {
+        "execution_status": "failed",
+        "action_type": "click",
+        "error": "element not found",
+    }
+
+
 def test_browser_use_execution_unknown_without_error_or_success() -> None:
     trace = load_browser_use_fixture()
     execution = trace.steps[1].execution

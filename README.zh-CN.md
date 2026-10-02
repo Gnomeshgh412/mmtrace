@@ -12,30 +12,39 @@ Observation -> Model Context -> Action -> Execution -> Post-State
 
 MMTrace 刻意保持小而清晰。它不是通用 Agent 调试器、语义裁判、恢复框架、Dashboard 平台或 Agent runtime。
 
-## 真实失败案例
+## 真实执行失败案例
 
-MMTrace 分析了一条未经修改的公开 OSWorld 真实轨迹，该轨迹由
-Qwen3-VL-8B-Thinking 产生。
+MMTrace 分析了一条未经修改的公开 Holo4 / OSWorld 真实轨迹。
 
-![MMTrace OSWorld 真实失败案例](docs/assets/osworld-real-failure.png)
+![MMTrace Holo4 真实执行失败案例](docs/assets/holo4-real-execution-failure.png)
 
-该任务最终得分为 `0.0`。MMTrace 独立检测到两类共 11 个确定性可靠性检查结果：
+执行器在 5 个步骤中明确返回执行失败，其中包括：
 
-- 1 x `MMTRACE003` - 坐标越界
-- 10 x `MMTRACE005` - 陈旧观察
+- `xdotool` 错误
+- Python `NameError`
+- Python `AttributeError`
+- Python `IndexError`
 
-其中 Step 17 存在一个非常直观的检查结果：
+MMTrace 将这些机器可验证的执行失败统一报告为：
 
-```python
-pyautogui.dragTo(1493, 1080, duration=0.5)
+- 5 × `MMTRACE007` - Explicit Execution Failure
+
+上图展示了其中一个真实 ERROR 在 Trace Inspector 中的定位结果。
+
+其中一个具体 Finding 发生在 source Step 21，在 MMTrace 中标准化为 Step 22：
+
+```text
+NameError: name 'pyautoguiBUTTONDOWN' is not defined
 ```
 
-当前画面尺寸为 `1920 x 1080`，因此 `y = 1080` 已超出合法范围：
-`0 <= y < 1080`。
+这些 ERROR 出现在一个最终失败的真实任务轨迹中，但 MMTrace 不声称它们已经被证明是整个任务失败的唯一或直接原因。
 
-这些可靠性问题与任务失败出现在同一条真实轨迹中，但 MMTrace 不声称它们已经被证明是该任务失败的直接原因。
+来源：
 
-数据来源：`UI-MOPD/OSWorld-Eval-Results`（OSWorld，Qwen3-VL-8B-Thinking）。
+- Dataset: `Hcompany/trajectories`
+- Benchmark: OSWorld
+- Model: Holo4 27B
+- Trajectory: `libreoffice-calc-13-23ff35a8`
 
 ## Why MMTrace
 
@@ -59,6 +68,7 @@ MMTrace 专注于记录证据上的确定性检查。当某条规则所需的证
 - `MMTRACE004` - Coordinate Space Mismatch
 - `MMTRACE005` - Stale Observation
 - `MMTRACE006` - Missing Post-Action Verification
+- `MMTRACE007` - Explicit Execution Failure (ERROR)
 
 并不是每个适配器（Adapter）都能提供每条规则需要的 evidence。IMPLEMENTED 不等于 EVALUABLE。
 
@@ -110,6 +120,12 @@ mmtrace check history.json --adapter browser-use
 mmtrace check traj.jsonl --adapter osworld
 ```
 
+检查 Holo4 trajectory JSON 文件：
+
+```bash
+mmtrace check trajectory.json --adapter holo4
+```
+
 输出机器可读 JSON：
 
 ```bash
@@ -129,7 +145,7 @@ mmtrace check trajectory.json \
 
 Web MVP 提供一个本地 Trace Inspector，包括：
 
-- `generic`、`browser-use` 与 `osworld` Adapter 选择
+- `generic`、`browser-use`、`osworld` 与 `holo4` Adapter 选择
 - JSON 轨迹上传
 - 可选 screenshot ZIP 上传
 - Trace summary、trajectory list、step inspector 和 findings panel
@@ -137,10 +153,6 @@ Web MVP 提供一个本地 Trace Inspector，包括：
 - 当 Before / After 两侧 screenshot 都存在时支持切换
 
 Screenshot artifacts 是可选 evidence。即使不上传 ZIP，分析流程仍会正常工作，UI 会明确显示 screenshot artifact unavailable。
-
-一条真实 Browser Use 运行轨迹；当前可评价规则未检测到确定性可靠性问题。
-
-![MMTrace Trace Inspector](docs/assets/trace-inspector.png)
 
 ## Run Locally
 

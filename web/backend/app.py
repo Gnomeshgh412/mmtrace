@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from mmtrace.adapters.base import AdapterError, BaseAdapter
 from mmtrace.adapters.browser_use import BrowserUseAdapter
 from mmtrace.adapters.generic_json import GenericJSONAdapter
+from mmtrace.adapters.holo4 import Holo4Adapter
 from mmtrace.adapters.osworld import OSWorldAdapter
 from mmtrace.engine import CheckEngine
 from mmtrace.schema.trace import Observation, Trace
@@ -125,6 +126,8 @@ def _adapter_for_name(name: str) -> BaseAdapter:
         return BrowserUseAdapter()
     if name == "osworld":
         return OSWorldAdapter()
+    if name == "holo4":
+        return Holo4Adapter()
     raise _error_response(
         status_code=400,
         code="UNKNOWN_ADAPTER",

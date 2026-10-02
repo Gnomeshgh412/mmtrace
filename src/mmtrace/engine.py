@@ -9,6 +9,7 @@ from mmtrace.checks.coordinate import (
     CoordinateOutOfFrameCheck,
     CoordinateSpaceMismatchCheck,
 )
+from mmtrace.checks.execution import ExplicitExecutionFailureCheck
 from mmtrace.checks.observation import (
     MissingObservationCheck,
     ObservationNotInModelContextCheck,
@@ -26,6 +27,7 @@ DEFAULT_CHECKS: tuple[BaseCheck, ...] = (
     CoordinateSpaceMismatchCheck(),
     StaleObservationCheck(),
     MissingPostActionVerificationCheck(),
+    ExplicitExecutionFailureCheck(),
 )
 
 

@@ -80,8 +80,11 @@ def test_cli_json_format_outputs_valid_json(capsys) -> None:
     assert exit_code == 1
     assert parsed["trace_id"] == "coordinate-out-of-frame"
     assert parsed["status"] == "FAIL"
-    assert parsed["error_count"] == 1
-    assert parsed["findings"][0]["rule_id"] == "MMTRACE003"
+    assert parsed["error_count"] == 2
+    assert {finding["rule_id"] for finding in parsed["findings"]} == {
+        "MMTRACE003",
+        "MMTRACE007",
+    }
 
 
 def test_cli_output_writes_report_file(tmp_path: Path, capsys) -> None:

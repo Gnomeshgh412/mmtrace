@@ -10,6 +10,7 @@ from typing import TextIO
 from mmtrace.adapters.base import AdapterError
 from mmtrace.adapters.browser_use import BrowserUseAdapter
 from mmtrace.adapters.generic_json import GenericJSONAdapter
+from mmtrace.adapters.holo4 import Holo4Adapter
 from mmtrace.adapters.osworld import OSWorldAdapter
 from mmtrace.engine import DEFAULT_CHECKS, CheckEngine
 from mmtrace.report import format_report
@@ -35,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     check_parser.add_argument("input", help="path to an MMTrace JSON trajectory")
     check_parser.add_argument(
         "--adapter",
-        choices=["generic", "browser-use", "osworld"],
+        choices=["generic", "browser-use", "osworld", "holo4"],
         default="generic",
     )
     check_parser.add_argument("--format", choices=["text", "json"], default="text")
@@ -85,6 +86,8 @@ def _adapter_for_name(name: str):
         return BrowserUseAdapter()
     if name == "osworld":
         return OSWorldAdapter()
+    if name == "holo4":
+        return Holo4Adapter()
     raise ValueError(f"unsupported adapter: {name}")
 
 

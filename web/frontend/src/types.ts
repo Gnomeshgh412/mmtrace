@@ -91,7 +91,7 @@ export interface Artifacts {
   screenshots: Record<string, string>;
 }
 
-export type AdapterName = "generic" | "browser-use" | "osworld";
+export type AdapterName = "generic" | "browser-use" | "osworld" | "holo4";
 
 export interface ApiErrorPayload {
   error?: {

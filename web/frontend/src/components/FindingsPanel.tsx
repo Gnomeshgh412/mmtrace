@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Finding } from "../types";
 
 interface FindingsPanelProps {
@@ -23,6 +24,72 @@ function readableValue(value: unknown): string {
   return String(value);
 }
 
+const ERROR_PREVIEW_LIMIT = 240;
+
+function lastExceptionLine(value: string): string | null {
+  const lines = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of [...lines].reverse()) {
+    if (/\b(?:[A-Za-z]+Error|[A-Za-z]+Exception):/.test(line)) {
+      return line;
+    }
+  }
+
+  return null;
+}
+
+function errorPreview(value: string): string {
+  if (value.length <= ERROR_PREVIEW_LIMIT) return value;
+
+  const receiptIndex = value.indexOf("[Execution receipt]");
+  const previewSource =
+    receiptIndex > 0 ? value.slice(0, receiptIndex).trimEnd() : value;
+  if (previewSource.length <= ERROR_PREVIEW_LIMIT) return previewSource;
+
+  const head = previewSource.slice(0, ERROR_PREVIEW_LIMIT).trimEnd();
+  const exceptionLine = lastExceptionLine(value);
+  if (exceptionLine && !head.includes(exceptionLine)) {
+    return `${head}\n...\n${exceptionLine}`;
+  }
+
+  return `${head}\n...`;
+}
+
+function EvidenceValue({
+  evidenceKey,
+  value,
+}: {
+  evidenceKey: string;
+  value: unknown;
+}) {
+  const readable = readableValue(value);
+  const isLongError = evidenceKey === "error" && readable.length > ERROR_PREVIEW_LIMIT;
+  const [expanded, setExpanded] = useState(false);
+
+  if (!isLongError) {
+    return <span className="evidence-value">{readable}</span>;
+  }
+
+  return (
+    <div className="evidence-value evidence-error">
+      <span className="evidence-error-text">
+        {expanded ? readable : errorPreview(readable)}
+      </span>
+      <button
+        type="button"
+        className="evidence-toggle"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        {expanded ? "Show less" : "Show full error"}
+      </button>
+    </div>
+  );
+}
+
 function EvidenceList({ evidence }: { evidence?: Record<string, unknown> | null }) {
   if (!evidence || Object.keys(evidence).length === 0) {
     return <p className="empty-copy">No evidence fields recorded.</p>;
@@ -33,7 +100,9 @@ function EvidenceList({ evidence }: { evidence?: Record<string, unknown> | null 
       {Object.entries(evidence).map(([key, value]) => (
         <div key={key}>
           <dt>{key}</dt>
-          <dd>{readableValue(value)}</dd>
+          <dd>
+            <EvidenceValue evidenceKey={key} value={value} />
+          </dd>
         </div>
       ))}
     </dl>
@@ -76,7 +145,10 @@ export function FindingsPanel({
                   <span className="muted">{selectedFinding.step_id ?? "Trace-level"}</span>
                 </div>
                 <h3>Evidence</h3>
-                <EvidenceList evidence={selectedFinding.evidence} />
+                <EvidenceList
+                  key={findingKey(selectedFinding)}
+                  evidence={selectedFinding.evidence}
+                />
                 <h4>Explanation</h4>
                 <p>{selectedFinding.explanation ?? "Not available"}</p>
                 <h4>Suggestion</h4>

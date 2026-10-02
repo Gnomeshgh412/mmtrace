@@ -36,6 +36,7 @@ export function TraceLoader({
           <option value="generic">generic</option>
           <option value="browser-use">browser-use</option>
           <option value="osworld">osworld</option>
+          <option value="holo4">holo4</option>
         </select>
       </div>
 

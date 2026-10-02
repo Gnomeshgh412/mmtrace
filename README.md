@@ -12,32 +12,36 @@ Observation -> Model Context -> Action -> Execution -> Post-State
 
 It is intentionally small. MMTrace is not a general agent debugger, semantic judge, recovery framework, dashboard platform, or agent runtime.
 
-## Real-World Failure Case
+## Real-World Execution Failure
 
-MMTrace analyzed an unmodified public OSWorld trajectory produced by
-Qwen3-VL-8B-Thinking.
+MMTrace analyzed an unmodified public Holo4 trajectory from the OSWorld benchmark.
 
-![MMTrace OSWorld real failure](docs/assets/osworld-real-failure.png)
+![MMTrace Holo4 real execution failure](docs/assets/holo4-real-execution-failure.png)
 
-The task itself received a score of `0.0`. MMTrace independently surfaced
-11 deterministic reliability findings across two rule classes:
+The executor explicitly reported failures at five steps, including `xdotool`
+errors and Python `NameError`, `AttributeError`, and `IndexError` exceptions.
 
-- 1 x `MMTRACE003` - Coordinate Out Of Frame
-- 10 x `MMTRACE005` - Stale Observation
+MMTrace surfaces these machine-verifiable failures as:
 
-One concrete finding occurred at Step 17:
+- 5 × `MMTRACE007` - Explicit Execution Failure
 
-```python
-pyautogui.dragTo(1493, 1080, duration=0.5)
+The screenshot above shows one of these failures in the Trace Inspector.
+
+One concrete finding occurred at source Step 21, normalized as MMTrace Step 22:
+
+```text
+NameError: name 'pyautoguiBUTTONDOWN' is not defined
 ```
 
-with a `1920 x 1080` frame, making `y = 1080` outside the valid coordinate range
-`0 <= y < 1080`.
+These errors occur within a failed real-world trajectory. MMTrace does not claim
+that they are proven to be the sole or direct cause of the overall task failure.
 
-These findings occur in the same failed trajectory, but MMTrace does not claim
-that they are proven causal explanations for the task failure.
+Source:
 
-Source: `UI-MOPD/OSWorld-Eval-Results` (OSWorld, Qwen3-VL-8B-Thinking).
+- Dataset: `Hcompany/trajectories`
+- Benchmark: OSWorld
+- Model: Holo4 27B
+- Trajectory: `libreoffice-calc-13-23ff35a8`
 
 ## Why MMTrace
 
@@ -61,6 +65,7 @@ MMTrace focuses on deterministic checks over recorded evidence. When required ev
 - `MMTRACE004` - Coordinate Space Mismatch
 - `MMTRACE005` - Stale Observation
 - `MMTRACE006` - Missing Post-Action Verification
+- `MMTRACE007` - Explicit Execution Failure (ERROR)
 
 Not every adapter can provide the evidence needed for every rule. Implemented does not mean evaluable.
 
@@ -112,6 +117,12 @@ Check an OSWorld `traj.jsonl` file:
 mmtrace check traj.jsonl --adapter osworld
 ```
 
+Check a Holo4 trajectory JSON file:
+
+```bash
+mmtrace check trajectory.json --adapter holo4
+```
+
 Emit machine-readable JSON:
 
 ```bash
@@ -131,7 +142,7 @@ mmtrace check trajectory.json \
 
 The Web MVP provides a local Trace Inspector with:
 
-- Adapter selection for `generic`, `browser-use`, and `osworld`
+- Adapter selection for `generic`, `browser-use`, `osworld`, and `holo4`
 - JSON trace upload
 - Optional screenshot ZIP upload
 - Trace summary, trajectory list, step inspector, and findings panel
@@ -139,11 +150,6 @@ The Web MVP provides a local Trace Inspector with:
 - Before / After observation switching when both screenshots are available
 
 Screenshot artifacts are optional. If no ZIP is uploaded, analysis still works and the UI reports screenshot artifacts as unavailable.
-
-A real Browser Use trajectory with no deterministic findings from the currently
-evaluable rules.
-
-![MMTrace Trace Inspector](docs/assets/trace-inspector.png)
 
 ## Run Locally
 
