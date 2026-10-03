@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { ChevronLeft, ChevronRight, CircleAlert, TriangleAlert, X } from "lucide-react";
 import type { Finding } from "../types";
 
 interface FindingsPanelProps {
   findings: Finding[];
   selectedFinding: Finding | null;
   selectedStepId: string | null;
+  onClose?: () => void;
   onSelectFinding: (finding: Finding) => void;
 }
 
@@ -90,37 +92,81 @@ function EvidenceValue({
   );
 }
 
-function EvidenceList({ evidence }: { evidence?: Record<string, unknown> | null }) {
-  if (!evidence || Object.keys(evidence).length === 0) {
-    return <p className="empty-copy">No evidence fields recorded.</p>;
-  }
+function keyEvidence(finding: Finding): Array<[string, unknown]> {
+  const evidence = finding.evidence;
+  if (!evidence) return [];
 
-  return (
-    <dl className="evidence-grid">
-      {Object.entries(evidence).map(([key, value]) => (
-        <div key={key}>
-          <dt>{key}</dt>
-          <dd>
-            <EvidenceValue evidenceKey={key} value={value} />
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
+  return ["execution_status", "action_type"]
+    .filter((key) => Object.prototype.hasOwnProperty.call(evidence, key))
+    .map((key) => [key, evidence[key]]);
+}
+
+function findingError(finding: Finding): unknown {
+  return finding.evidence && Object.prototype.hasOwnProperty.call(finding.evidence, "error")
+    ? finding.evidence.error
+    : undefined;
+}
+
+function categoryForFinding(finding: Finding): string {
+  if (finding.rule_id === "MMTRACE007") return "Execution";
+  return finding.rule_id;
+}
+
+function SeverityIcon({ severity }: { severity: Finding["severity"] }) {
+  if (severity === "WARNING") {
+    return <TriangleAlert size={13} aria-hidden="true" />;
+  }
+  return <CircleAlert size={13} aria-hidden="true" />;
 }
 
 export function FindingsPanel({
   findings,
+  onClose,
   selectedFinding,
   selectedStepId,
   onSelectFinding,
 }: FindingsPanelProps) {
+  const selected =
+    selectedFinding ??
+    findings.find((finding) => finding.step_id === selectedStepId) ??
+    findings[0] ??
+    null;
+  const selectedIndex = selected
+    ? findings.findIndex((finding) => findingKey(finding) === findingKey(selected))
+    : -1;
+  const previousFinding = selectedIndex > 0 ? findings[selectedIndex - 1] : null;
+  const cyclicPrevious =
+    findings.length > 0
+      ? previousFinding ?? findings[findings.length - 1]
+      : null;
+  const cyclicNext =
+    findings.length > 0
+      ? findings[(selectedIndex + 1 + findings.length) % findings.length]
+      : null;
+
   return (
     <aside className="panel findings-panel" aria-label="Reliability findings">
       <section>
         <div className="panel-heading">
-          <h2>Findings</h2>
-          <span className="muted">{findings.length} total</span>
+          <div>
+            <span className="eyebrow">Finding</span>
+            <h2>Current Finding</h2>
+          </div>
+          <div className="finding-heading-actions">
+            {selectedIndex >= 0 && (
+              <span className="finding-position">{selectedIndex + 1} / {findings.length}</span>
+            )}
+            {onClose && (
+              <button
+                type="button"
+                className="finding-close-button"
+                aria-label="Close finding"
+                onClick={onClose}
+              >
+                <X size={17} aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </div>
 
         {findings.length === 0 ? (
@@ -134,70 +180,77 @@ export function FindingsPanel({
           </div>
         ) : (
           <>
-            {selectedFinding && (
+            {selected && (
               <section className="finding-detail selected-finding-detail" aria-label="Selected finding detail">
                 <div className="selected-finding-header">
-                  <span className={`severity-badge severity-${selectedFinding.severity.toLowerCase()}`}>
-                    {selectedFinding.severity}
+                  <span className={`severity-badge severity-${selected.severity.toLowerCase()}`}>
+                    <SeverityIcon severity={selected.severity} />
+                    {selected.severity}
                   </span>
-                  <span className="finding-rule">{selectedFinding.rule_id}</span>
-                  <strong>{selectedFinding.title}</strong>
-                  <span className="muted">{selectedFinding.step_id ?? "Trace-level"}</span>
+                  <code className="finding-rule">{selected.rule_id}</code>
+                  <strong>{selected.title}</strong>
+                  <span className="muted">{selected.step_id ?? "Trace-level"}</span>
                 </div>
-                <h3>Evidence</h3>
-                <EvidenceList
-                  key={findingKey(selectedFinding)}
-                  evidence={selectedFinding.evidence}
-                />
-                <h4>Explanation</h4>
-                <p>{selectedFinding.explanation ?? "Not available"}</p>
-                <h4>Suggestion</h4>
-                <p>{selectedFinding.suggestion ?? "Not available"}</p>
+                <p>{selected.explanation ?? "Not available"}</p>
+                <dl className="finding-meta">
+                  <div>
+                    <dt>category</dt>
+                    <dd>{categoryForFinding(selected)}</dd>
+                  </div>
+                  <div>
+                    <dt>step</dt>
+                    <dd><code>{selected.step_id ?? "trace"}</code></dd>
+                  </div>
+                </dl>
+                {keyEvidence(selected).length > 0 && (
+                  <>
+                    <h3>Evidence</h3>
+                    <dl className="evidence-grid key-evidence">
+                      {keyEvidence(selected).map(([key, value]) => (
+                        <div key={key}>
+                          <dt>{key}</dt>
+                          <dd>
+                            <EvidenceValue evidenceKey={key} value={value} />
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </>
+                )}
+                {findingError(selected) !== undefined && (
+                  <section className="finding-error-block" aria-label="Finding error">
+                    <h3>Error</h3>
+                    <EvidenceValue evidenceKey="error" value={findingError(selected)} />
+                  </section>
+                )}
+                {selected.suggestion && (
+                  <p className="secondary-note">
+                    <strong>Suggested inspection</strong>
+                    <span>{selected.suggestion}</span>
+                  </p>
+                )}
+                <div className="finding-nav" aria-label="Finding navigation">
+                  <button
+                    type="button"
+                    disabled={findings.length < 2}
+                    onClick={() => cyclicPrevious && onSelectFinding(cyclicPrevious)}
+                  >
+                    <ChevronLeft size={14} aria-hidden="true" />
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={findings.length < 2}
+                    onClick={() => cyclicNext && onSelectFinding(cyclicNext)}
+                  >
+                    Next
+                    <ChevronRight size={14} aria-hidden="true" />
+                  </button>
+                </div>
               </section>
             )}
-
-            <section className="all-findings-section" aria-label="All findings">
-              <div className="panel-heading compact-heading">
-                <h3>All Findings</h3>
-                <span className="muted">{findings.length} total</span>
-              </div>
-              <div className="finding-list">
-                {findings.map((finding) => {
-                  const selected = selectedFinding
-                    ? findingKey(finding) === findingKey(selectedFinding)
-                    : false;
-                  const relatedToStep = finding.step_id === selectedStepId;
-
-                  return (
-                    <button
-                      type="button"
-                      key={findingKey(finding)}
-                      className={`finding-card ${selected ? "selected" : ""} ${
-                        relatedToStep ? "related" : ""
-                      }`}
-                      onClick={() => onSelectFinding(finding)}
-                    >
-                      <span className={`severity-badge severity-${finding.severity.toLowerCase()}`}>
-                        {finding.severity}
-                      </span>
-                      <span className="finding-rule">{finding.rule_id}</span>
-                      <strong>{finding.title}</strong>
-                      <span>{finding.step_id ?? "Trace-level"}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
           </>
         )}
-      </section>
-      <section className="coverage-section" aria-label="Rule coverage">
-        <div className="panel-heading">
-          <h2>Rule Coverage</h2>
-        </div>
-        <p className="empty-copy">
-          Evidence coverage is not included in the current API response.
-        </p>
       </section>
     </aside>
   );
