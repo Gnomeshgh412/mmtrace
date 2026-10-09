@@ -329,7 +329,7 @@ def _trace_metadata(data: dict[str, Any]) -> dict[str, Any]:
         "source": "holo4",
         "source_format": "Hcompany/trajectories",
     }
-    for key in ("benchmark", "task", "success", "score", "run", "runs", "duration_s"):
+    for key in ("model", "benchmark", "task", "success", "score", "run", "runs", "duration_s"):
         if key in data:
             metadata[key] = data[key]
     return metadata

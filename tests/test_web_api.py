@@ -17,6 +17,11 @@ REAL_OSWORLD = Path(__file__).parents[1] / "examples" / "osworld_real_failure" /
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def isolated_mmtrace_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MMTRACE_HOME", str(tmp_path / "mmtrace-home"))
+
+
 def post_analyze(path: Path, adapter: str):
     with path.open("rb") as trace_file:
         return client.post(

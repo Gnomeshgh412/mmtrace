@@ -7,10 +7,8 @@ import posixpath
 import shutil
 import stat
 import zipfile
-from atexit import register as register_atexit
 from pathlib import Path
 from urllib.parse import quote
-from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -22,13 +20,15 @@ from mmtrace.adapters.holo4 import Holo4Adapter
 from mmtrace.adapters.osworld import OSWorldAdapter
 from mmtrace.engine import CheckEngine
 from mmtrace.schema.trace import Observation, Trace
+from web.backend.persistence import ArtifactInput, PersistenceError, PersistenceStore, SnapshotInput
+from web.backend.persistence.models import AnalysisDetail, AnalysisSummary
+from web.backend.persistence.store import new_analysis_id
 
 app = FastAPI(title="MMTrace API")
 
 ALLOWED_SCREENSHOT_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 MAX_ARTIFACT_FILES = 500
 MAX_ARTIFACT_BYTES = 100 * 1024 * 1024
-_ARTIFACT_REGISTRY: dict[str, Path] = {}
 
 
 @app.get("/api/health")
@@ -49,7 +49,7 @@ async def analyze(
         if artifacts is not None
         else None
     )
-    analysis_id = str(uuid4())
+    analysis_id = new_analysis_id()
     artifact_root: Path | None = None
     extracted_artifacts: list[str] = []
 
@@ -65,22 +65,22 @@ async def analyze(
 
         trace = selected_adapter.load(load_path)
         report = CheckEngine().run(trace)
-        screenshot_mapping = (
-            _register_screenshot_artifacts(
-                analysis_id,
-                trace,
-                artifact_root,
-                extracted_artifacts,
+        persisted = PersistenceStore().persist_analysis(
+            SnapshotInput(
+                analysis_id=analysis_id,
+                adapter=adapter,
+                source_path=temp_path,
+                source_filename=_safe_uploaded_filename(trace_file.filename, "trace.json"),
+                trace=trace,
+                report=report,
+                artifacts=(
+                    _collect_screenshot_artifacts(trace, artifact_root, extracted_artifacts)
+                    if artifact_root is not None
+                    else []
+                ),
             )
-            if artifact_root is not None
-            else {}
         )
-        return {
-            "analysis_id": analysis_id,
-            "trace": trace.model_dump(mode="json"),
-            "report": report.model_dump(mode="json"),
-            "artifacts": {"screenshots": screenshot_mapping},
-        }
+        return persisted.model_dump(mode="json")
     except AdapterError as exc:
         raise _adapter_http_error(exc) from exc
     except zipfile.BadZipFile as exc:
@@ -93,30 +93,56 @@ async def analyze(
         temp_path.unlink(missing_ok=True)
         if artifact_zip_path is not None:
             artifact_zip_path.unlink(missing_ok=True)
-        if artifact_root is not None and analysis_id not in _ARTIFACT_REGISTRY:
+        if artifact_root is not None:
             shutil.rmtree(artifact_root, ignore_errors=True)
 
 
 @app.get("/api/artifacts/{analysis_id}/{artifact_path:path}")
 def get_artifact(analysis_id: str, artifact_path: str) -> FileResponse:
-    root = _ARTIFACT_REGISTRY.get(analysis_id)
-    if root is None:
+    try:
+        target = PersistenceStore().artifact_path(analysis_id, artifact_path)
+    except KeyError as exc:
         raise _error_response(
             status_code=404,
             code="INVALID_INPUT",
             message="Unknown analysis artifact.",
-        )
-
-    safe_path = _normalize_artifact_path(artifact_path)
-    target = (root / safe_path).resolve()
-    if not _is_relative_to(target, root.resolve()) or not target.is_file():
-        raise _error_response(
-            status_code=404,
-            code="INVALID_INPUT",
-            message="Unknown analysis artifact.",
-        )
+        ) from exc
 
     return FileResponse(target)
+
+
+@app.get("/api/analyses", response_model=list[AnalysisSummary])
+def list_analyses(
+    search: str | None = None,
+    status: str | None = None,
+    adapter: str | None = None,
+    findings: str | None = None,
+) -> list[AnalysisSummary]:
+    try:
+        return PersistenceStore().list_analyses(
+            search=search,
+            status=status,
+            adapter=adapter,
+            findings=findings,
+        )
+    except (PersistenceError, ValueError) as exc:
+        raise _error_response(
+            status_code=400,
+            code="INVALID_INPUT",
+            message=str(exc),
+        ) from exc
+
+
+@app.get("/api/analyses/{analysis_id}", response_model=AnalysisDetail)
+def get_analysis(analysis_id: str) -> AnalysisDetail:
+    try:
+        return PersistenceStore().get_analysis(analysis_id)
+    except KeyError as exc:
+        raise _error_response(
+            status_code=404,
+            code="INVALID_INPUT",
+            message="Unknown analysis.",
+        ) from exc
 
 
 def _adapter_for_name(name: str) -> BaseAdapter:
@@ -184,26 +210,28 @@ def _prepare_screenshot_artifacts(
     except Exception:
         shutil.rmtree(artifact_root, ignore_errors=True)
         raise
-    return _register_screenshot_artifacts(analysis_id, trace, artifact_root, extracted)
+    inputs = _collect_screenshot_artifacts(trace, artifact_root, extracted)
+    return {
+        artifact.observation_id or "": f"/api/artifacts/{analysis_id}/artifacts/{quote(artifact.stored_name, safe='')}"
+        for artifact in inputs
+        if artifact.observation_id
+    }
 
 
-def _register_screenshot_artifacts(
-    analysis_id: str,
+def _collect_screenshot_artifacts(
     trace: Trace,
     artifact_root: Path,
     extracted: list[str],
-) -> dict[str, str]:
+) -> list[ArtifactInput]:
     if not extracted:
-        _ARTIFACT_REGISTRY[analysis_id] = artifact_root
-        return {}
+        return []
 
-    _ARTIFACT_REGISTRY[analysis_id] = artifact_root
     by_path = {path: path for path in extracted}
     by_basename: dict[str, list[str]] = {}
     for path in extracted:
         by_basename.setdefault(posixpath.basename(path), []).append(path)
 
-    mapping: dict[str, str] = {}
+    artifacts: list[ArtifactInput] = []
     for observation in _iter_observations(trace):
         if not observation.observation_id or not observation.image_path:
             continue
@@ -216,11 +244,21 @@ def _register_screenshot_artifacts(
         if matched is None:
             continue
 
-        mapping[observation.observation_id] = (
-            f"/api/artifacts/{analysis_id}/{quote(matched, safe='/')}"
+        extension = Path(matched).suffix.lower()
+        stored_name = f"{_safe_artifact_stem(observation.observation_id)}{extension}"
+        artifacts.append(
+            ArtifactInput(
+                observation_id=observation.observation_id,
+                kind="screenshot",
+                source_path=matched,
+                temp_path=artifact_root / matched,
+                stored_name=stored_name,
+                width=observation.width,
+                height=observation.height,
+            )
         )
 
-    return mapping
+    return artifacts
 
 
 def _safe_uploaded_filename(filename: str | None, fallback: str) -> str:
@@ -231,6 +269,14 @@ def _safe_uploaded_filename(filename: str | None, fallback: str) -> str:
     except HTTPException:
         return fallback
     return normalized or fallback
+
+
+def _safe_artifact_stem(value: str) -> str:
+    safe = "".join(
+        character if character.isalnum() or character in {"-", "_"} else "-"
+        for character in value
+    ).strip("-_")
+    return safe or "artifact"
 
 
 def _extract_screenshot_zip(archive_path: Path, destination: Path) -> list[str]:
@@ -398,11 +444,3 @@ async def internal_exception_handler(_, exc: Exception) -> JSONResponse:
             }
         },
     )
-
-
-def _cleanup_artifacts() -> None:
-    for path in _ARTIFACT_REGISTRY.values():
-        shutil.rmtree(path, ignore_errors=True)
-
-
-register_atexit(_cleanup_artifacts)
