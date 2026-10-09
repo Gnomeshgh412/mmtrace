@@ -8,6 +8,30 @@ export interface AnalysisResponse {
   artifacts: Artifacts;
 }
 
+export interface AnalysisSummary {
+  analysis_id: string;
+  trace_id?: string | null;
+  adapter: string;
+  status: ReportStatus;
+  task?: string | null;
+  agent?: string | null;
+  model?: string | null;
+  benchmark?: string | null;
+  step_count: number;
+  error_count: number;
+  warning_count: number;
+  finding_count: number;
+  analyzed_at: string;
+  mmtrace_version: string;
+  rule_hits: RuleHit[];
+}
+
+export interface RuleHit {
+  rule_id: string;
+  count: number;
+  severity: Severity;
+}
+
 export interface Trace {
   trace_id: string;
   task?: string | null;
@@ -109,4 +133,11 @@ export interface AnalyzeTraceInput {
 export interface AnalyzeError {
   code: string;
   message: string;
+}
+
+export interface AnalysisListFilters {
+  search?: string;
+  status?: ReportStatus | "";
+  adapter?: string;
+  findings?: "" | "errors" | "warnings" | "none";
 }

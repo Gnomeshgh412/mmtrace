@@ -1,5 +1,7 @@
 import type {
+  AnalysisListFilters,
   AnalysisResponse,
+  AnalysisSummary,
   AnalyzeError,
   AnalyzeTraceInput,
   ApiErrorPayload,
@@ -30,6 +32,42 @@ export async function analyzeTrace({
   const response = await fetch("/api/analyze", {
     method: "POST",
     body,
+  });
+
+  if (!response.ok) {
+    throw new TraceAnalyzeError(await parseApiError(response));
+  }
+
+  return response.json() as Promise<AnalysisResponse>;
+}
+
+export async function listAnalyses(
+  filters: AnalysisListFilters = {},
+  signal?: AbortSignal,
+): Promise<AnalysisSummary[]> {
+  const params = new URLSearchParams();
+  const search = filters.search?.trim();
+  if (search) params.set("search", search);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.adapter) params.set("adapter", filters.adapter);
+  if (filters.findings) params.set("findings", filters.findings);
+
+  const query = params.toString();
+  const response = await fetch(`/api/analyses${query ? `?${query}` : ""}`, { signal });
+
+  if (!response.ok) {
+    throw new TraceAnalyzeError(await parseApiError(response));
+  }
+
+  return response.json() as Promise<AnalysisSummary[]>;
+}
+
+export async function getAnalysis(
+  analysisId: string,
+  signal?: AbortSignal,
+): Promise<AnalysisResponse> {
+  const response = await fetch(`/api/analyses/${encodeURIComponent(analysisId)}`, {
+    signal,
   });
 
   if (!response.ok) {
