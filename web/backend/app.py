@@ -19,6 +19,7 @@ from mmtrace.adapters.generic_json import GenericJSONAdapter
 from mmtrace.adapters.holo4 import Holo4Adapter
 from mmtrace.adapters.osworld import OSWorldAdapter
 from mmtrace.engine import CheckEngine
+from mmtrace.evaluation import EvaluationEngine
 from mmtrace.schema.trace import Observation, Trace
 from web.backend.persistence import ArtifactInput, PersistenceError, PersistenceStore, SnapshotInput
 from web.backend.persistence.models import AnalysisDetail, AnalysisSummary
@@ -65,6 +66,7 @@ async def analyze(
 
         trace = selected_adapter.load(load_path)
         report = CheckEngine().run(trace)
+        evaluations = EvaluationEngine().evaluate(trace, report.findings)
         persisted = PersistenceStore().persist_analysis(
             SnapshotInput(
                 analysis_id=analysis_id,
@@ -73,6 +75,7 @@ async def analyze(
                 source_filename=_safe_uploaded_filename(trace_file.filename, "trace.json"),
                 trace=trace,
                 report=report,
+                evaluations=evaluations,
                 artifacts=(
                     _collect_screenshot_artifacts(trace, artifact_root, extracted_artifacts)
                     if artifact_root is not None

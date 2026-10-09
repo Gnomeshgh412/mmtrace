@@ -11,11 +11,19 @@ from fastapi.testclient import TestClient
 
 from mmtrace.adapters.generic_json import GenericJSONAdapter
 from mmtrace.engine import CheckEngine
+from mmtrace.evaluation import EvaluationEngine
 from mmtrace.schema.finding import Finding, Report, Severity
 from web.backend.app import app
 from web.backend.persistence import ArtifactInput, PersistenceError, PersistenceStore, SnapshotInput
 from web.backend.persistence.db import SCHEMA_VERSION, connect
-from web.backend.persistence.store import SNAPSHOT_FORMAT, SNAPSHOT_MANIFEST
+from web.backend.persistence.store import (
+    EVALUATION_RELPATH,
+    EVALUATION_SNAPSHOT_FORMAT,
+    EVALUATION_SNAPSHOT_VERSION,
+    RULE_EVALUATIONS_FEATURE,
+    SNAPSHOT_FORMAT,
+    SNAPSHOT_MANIFEST,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXAMPLES = Path(__file__).parents[1] / "examples"
@@ -78,6 +86,7 @@ def snapshot_input(tmp_path: Path, source: Path | None = None) -> SnapshotInput:
     source_path = source or FIXTURES / "valid_trace.json"
     trace = GenericJSONAdapter().load(source_path)
     report = CheckEngine().run(trace)
+    evaluations = EvaluationEngine().evaluate(trace, report.findings)
     return SnapshotInput(
         analysis_id="11111111-1111-4111-8111-111111111111",
         adapter="generic",
@@ -85,6 +94,7 @@ def snapshot_input(tmp_path: Path, source: Path | None = None) -> SnapshotInput:
         source_filename=source_path.name,
         trace=trace,
         report=report,
+        evaluations=evaluations,
     )
 
 
@@ -99,6 +109,24 @@ def write_snapshot_manifest(path: Path, analysis_id: str) -> None:
                 "format": SNAPSHOT_FORMAT,
                 "analysis_id": analysis_id,
                 "schema_version": SCHEMA_VERSION,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_snapshot_manifest_with_features(
+    path: Path,
+    analysis_id: str,
+    features: list[str],
+) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "format": SNAPSHOT_FORMAT,
+                "analysis_id": analysis_id,
+                "schema_version": SCHEMA_VERSION,
+                "features": features,
             }
         ),
         encoding="utf-8",
@@ -231,8 +259,203 @@ def test_reopen_after_backend_restart_keeps_artifact_access(tmp_path: Path) -> N
 
     assert detail_response.status_code == 200
     assert detail_response.json()["artifacts"]["screenshots"]["obs-before"] == artifact_url
+    assert detail_response.json()["evaluations"] == body["evaluations"]
     assert artifact_response.status_code == 200
     assert artifact_response.content == b"png-content"
+
+
+def test_new_snapshot_persists_rule_evaluations_and_marker_feature(
+    isolated_mmtrace_home: Path,
+    tmp_path: Path,
+) -> None:
+    snapshot = snapshot_input(tmp_path)
+
+    detail = PersistenceStore(isolated_mmtrace_home).persist_analysis(snapshot)
+    analysis_dir = isolated_mmtrace_home / "analyses" / snapshot.analysis_id
+    manifest = json.loads((analysis_dir / SNAPSHOT_MANIFEST).read_text(encoding="utf-8"))
+    evaluation_payload = json.loads(
+        (analysis_dir / EVALUATION_RELPATH).read_text(encoding="utf-8")
+    )
+
+    assert manifest["features"] == [RULE_EVALUATIONS_FEATURE]
+    assert evaluation_payload["format"] == EVALUATION_SNAPSHOT_FORMAT
+    assert evaluation_payload["schema_version"] == EVALUATION_SNAPSHOT_VERSION
+    assert [evaluation.rule_id for evaluation in detail.evaluations] == [
+        "MMTRACE001",
+        "MMTRACE002",
+        "MMTRACE003",
+        "MMTRACE004",
+        "MMTRACE005",
+        "MMTRACE006",
+        "MMTRACE007",
+    ]
+    assert detail.model_dump(mode="json")["evaluations"] == [
+        evaluation.model_dump(mode="json") for evaluation in snapshot.evaluations
+    ]
+
+
+def test_legacy_snapshot_without_evaluations_reopens_with_null(
+    isolated_mmtrace_home: Path,
+    tmp_path: Path,
+) -> None:
+    snapshot = snapshot_input(tmp_path)
+    store = PersistenceStore(isolated_mmtrace_home)
+    detail = store.persist_analysis(snapshot)
+    analysis_dir = isolated_mmtrace_home / "analyses" / snapshot.analysis_id
+    shutil.rmtree(analysis_dir / "evaluation")
+    write_snapshot_manifest(analysis_dir / SNAPSHOT_MANIFEST, snapshot.analysis_id)
+
+    reopened = PersistenceStore(isolated_mmtrace_home).get_analysis(snapshot.analysis_id)
+
+    assert detail.evaluations is not None
+    assert reopened.evaluations is None
+    assert reopened.trace["trace_id"] == snapshot.trace.trace_id
+    assert reopened.report["status"] == snapshot.report.status.value
+
+
+def test_legacy_snapshot_detail_api_returns_null_evaluations(
+    isolated_mmtrace_home: Path,
+    tmp_path: Path,
+) -> None:
+    snapshot = snapshot_input(tmp_path)
+    PersistenceStore(isolated_mmtrace_home).persist_analysis(snapshot)
+    analysis_dir = isolated_mmtrace_home / "analyses" / snapshot.analysis_id
+    shutil.rmtree(analysis_dir / "evaluation")
+    write_snapshot_manifest(analysis_dir / SNAPSHOT_MANIFEST, snapshot.analysis_id)
+
+    response = TestClient(app).get(f"/api/analyses/{snapshot.analysis_id}")
+
+    assert response.status_code == 200
+    assert response.json()["evaluations"] is None
+
+
+def test_features_empty_is_legacy_compatible(
+    isolated_mmtrace_home: Path,
+    tmp_path: Path,
+) -> None:
+    snapshot = snapshot_input(tmp_path)
+    PersistenceStore(isolated_mmtrace_home).persist_analysis(snapshot)
+    analysis_dir = isolated_mmtrace_home / "analyses" / snapshot.analysis_id
+    shutil.rmtree(analysis_dir / "evaluation")
+    write_snapshot_manifest_with_features(analysis_dir / SNAPSHOT_MANIFEST, snapshot.analysis_id, [])
+
+    assert PersistenceStore(isolated_mmtrace_home).get_analysis(snapshot.analysis_id).evaluations is None
+
+
+def test_unknown_snapshot_feature_is_ignored(
+    isolated_mmtrace_home: Path,
+    tmp_path: Path,
+) -> None:
+    snapshot = snapshot_input(tmp_path)
+    PersistenceStore(isolated_mmtrace_home).persist_analysis(snapshot)
+    analysis_dir = isolated_mmtrace_home / "analyses" / snapshot.analysis_id
+    write_snapshot_manifest_with_features(
+        analysis_dir / SNAPSHOT_MANIFEST,
+        snapshot.analysis_id,
+        [RULE_EVALUATIONS_FEATURE, "future_optional_feature"],
+    )
+
+    assert PersistenceStore(isolated_mmtrace_home).get_analysis(snapshot.analysis_id).evaluations
+
+
+def test_malformed_snapshot_features_are_rejected(
+    isolated_mmtrace_home: Path,
+    tmp_path: Path,
+) -> None:
+    snapshot = snapshot_input(tmp_path)
+    PersistenceStore(isolated_mmtrace_home).persist_analysis(snapshot)
+    analysis_dir = isolated_mmtrace_home / "analyses" / snapshot.analysis_id
+    (analysis_dir / SNAPSHOT_MANIFEST).write_text(
+        json.dumps(
+            {
+                "format": SNAPSHOT_FORMAT,
+                "analysis_id": snapshot.analysis_id,
+                "schema_version": SCHEMA_VERSION,
+                "features": "rule_evaluations",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PersistenceError):
+        PersistenceStore(isolated_mmtrace_home).get_analysis(snapshot.analysis_id)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_message"),
+    [
+        (lambda path: path.unlink(), "invalid MMTrace evaluation snapshot"),
+        (lambda path: path.write_text("{not-json", encoding="utf-8"), "invalid MMTrace evaluation snapshot"),
+        (
+            lambda path: path.write_text(
+                json.dumps({"format": "wrong", "schema_version": 1, "evaluations": []}),
+                encoding="utf-8",
+            ),
+            "invalid MMTrace evaluation snapshot format",
+        ),
+        (
+            lambda path: path.write_text(
+                json.dumps(
+                    {
+                        "format": EVALUATION_SNAPSHOT_FORMAT,
+                        "schema_version": 999,
+                        "evaluations": [],
+                    }
+                ),
+                encoding="utf-8",
+            ),
+            "unsupported MMTrace evaluation snapshot schema version",
+        ),
+        (
+            lambda path: path.write_text(
+                json.dumps(
+                    {
+                        "format": EVALUATION_SNAPSHOT_FORMAT,
+                        "schema_version": EVALUATION_SNAPSHOT_VERSION,
+                        "evaluations": [{"rule_id": "MMTRACE001"}],
+                    }
+                ),
+                encoding="utf-8",
+            ),
+            "invalid MMTrace evaluation snapshot",
+        ),
+    ],
+)
+def test_new_snapshot_evaluation_corruption_is_not_legacy(
+    isolated_mmtrace_home: Path,
+    tmp_path: Path,
+    mutate,
+    expected_message: str,
+) -> None:
+    snapshot = snapshot_input(tmp_path)
+    PersistenceStore(isolated_mmtrace_home).persist_analysis(snapshot)
+    evaluation_path = isolated_mmtrace_home / "analyses" / snapshot.analysis_id / EVALUATION_RELPATH
+    mutate(evaluation_path)
+
+    with pytest.raises(PersistenceError, match=expected_message):
+        PersistenceStore(isolated_mmtrace_home).get_analysis(snapshot.analysis_id)
+
+    with connect(isolated_mmtrace_home / "mmtrace.db") as connection:
+        assert connection.execute("SELECT COUNT(*) FROM analyses").fetchone()[0] == 1
+
+
+def test_reopen_reads_frozen_evaluations_without_running_engine(
+    isolated_mmtrace_home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = snapshot_input(tmp_path)
+    persisted = PersistenceStore(isolated_mmtrace_home).persist_analysis(snapshot)
+    frozen = persisted.model_dump(mode="json")["evaluations"]
+
+    def forbidden_evaluate(*args, **kwargs):
+        raise AssertionError("EvaluationEngine must not run during reopen")
+
+    monkeypatch.setattr("mmtrace.evaluation.engine.EvaluationEngine.evaluate", forbidden_evaluate)
+
+    reopened = PersistenceStore(isolated_mmtrace_home).get_analysis(snapshot.analysis_id)
+
+    assert reopened.model_dump(mode="json")["evaluations"] == frozen
 
 
 def test_artifact_route_rejects_escape_and_injection(tmp_path: Path) -> None:
@@ -319,11 +542,12 @@ def test_source_write_failure_leaves_no_row_or_snapshot_workspace(
 
 @pytest.mark.parametrize(
     ("directory_name", "error_message"),
-    [
-        ("normalized", "normalized write failed"),
-        ("report", "report write failed"),
-    ],
-)
+        [
+            ("normalized", "normalized write failed"),
+            ("report", "report write failed"),
+            ("evaluation", "evaluation write failed"),
+        ],
+    )
 def test_snapshot_json_write_failure_leaves_no_row_or_snapshot_workspace(
     isolated_mmtrace_home: Path,
     tmp_path: Path,
@@ -543,20 +767,22 @@ def test_warning_only_pass_analysis_filters_are_distinct(
     tmp_path: Path,
 ) -> None:
     snapshot = snapshot_input(tmp_path)
+    report = Report.from_findings(
+        trace_id=snapshot.trace.trace_id or "",
+        findings=[
+            Finding(
+                rule_id="MMTRACE006",
+                severity=Severity.WARNING,
+                step_id="step-001",
+                title="Missing Post-Action Verification",
+            )
+        ],
+    )
     snapshot = snapshot.model_copy(
         update={
             "analysis_id": str(uuid4()),
-            "report": Report.from_findings(
-                trace_id=snapshot.trace.trace_id or "",
-                findings=[
-                    Finding(
-                        rule_id="MMTRACE006",
-                        severity=Severity.WARNING,
-                        step_id="step-001",
-                        title="Missing Post-Action Verification",
-                    )
-                ],
-            ),
+            "report": report,
+            "evaluations": EvaluationEngine().evaluate(snapshot.trace, report.findings),
         }
     )
     store = PersistenceStore(isolated_mmtrace_home)

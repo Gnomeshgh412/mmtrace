@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from mmtrace.evaluation import RuleEvaluation
 from mmtrace.schema.finding import Report
 from mmtrace.schema.trace import Trace
 
@@ -30,6 +31,7 @@ class SnapshotInput(BaseModel):
     source_filename: str
     trace: Trace
     report: Report
+    evaluations: list[RuleEvaluation]
     artifacts: list[ArtifactInput] = Field(default_factory=list)
 
     model_config = {"arbitrary_types_allowed": True}
@@ -63,4 +65,5 @@ class AnalysisDetail(BaseModel):
     analysis_id: str
     trace: dict
     report: dict
+    evaluations: list[RuleEvaluation] | None
     artifacts: dict[str, dict[str, str]]

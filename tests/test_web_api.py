@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import tempfile
 import zipfile
 from pathlib import Path
@@ -12,6 +13,7 @@ from web.backend.app import app
 FIXTURES = Path(__file__).parent / "fixtures"
 REAL_HISTORY = Path(__file__).parents[1] / "examples" / "browser_use_real" / "history.json"
 REAL_OSWORLD = Path(__file__).parents[1] / "examples" / "osworld_real_failure" / "traj.jsonl"
+REAL_HOLO4 = Path(__file__).parents[1] / "examples" / "holo4_real_execution_failure" / "trajectory.json"
 
 
 client = TestClient(app)
@@ -142,6 +144,15 @@ def test_analyze_generic_valid_trace() -> None:
     assert body["trace"]["trace_id"] == "valid-trace"
     assert body["report"]["status"] == "PASS"
     assert body["report"]["error_count"] == 0
+    assert [evaluation["rule_id"] for evaluation in body["evaluations"]] == [
+        "MMTRACE001",
+        "MMTRACE002",
+        "MMTRACE003",
+        "MMTRACE004",
+        "MMTRACE005",
+        "MMTRACE006",
+        "MMTRACE007",
+    ]
     assert body["artifacts"] == {"screenshots": {}}
 
 
@@ -149,12 +160,22 @@ def test_analyze_browser_use_real_history() -> None:
     response = post_analyze(REAL_HISTORY, "browser-use")
 
     body = response.json()
+    evaluations = {evaluation["rule_id"]: evaluation for evaluation in body["evaluations"]}
     action_count = sum(1 for step in body["trace"]["steps"] if step["action"] is not None)
     assert response.status_code == 200
     assert body["report"]["status"] == "PASS"
     assert body["report"]["error_count"] == 0
     assert body["report"]["warning_count"] == 0
     assert action_count == source_action_count(REAL_HISTORY) == 4
+    assert evaluations["MMTRACE001"]["coverage"] == "FULL"
+    assert evaluations["MMTRACE001"]["outcome"] == "PASS"
+    assert evaluations["MMTRACE002"]["coverage"] == "NOT_EVALUABLE"
+    assert evaluations["MMTRACE003"]["coverage"] == "NOT_EVALUABLE"
+    assert evaluations["MMTRACE004"]["coverage"] == "NOT_APPLICABLE"
+    assert evaluations["MMTRACE005"]["coverage"] == "NOT_EVALUABLE"
+    assert evaluations["MMTRACE006"]["coverage"] == "NOT_EVALUABLE"
+    assert evaluations["MMTRACE007"]["coverage"] == "PARTIAL"
+    assert evaluations["MMTRACE007"]["outcome"] == "PASS"
 
 
 def test_analyze_osworld_real_failure() -> None:
@@ -163,10 +184,48 @@ def test_analyze_osworld_real_failure() -> None:
 
     body = response.json()
     rule_ids = {finding["rule_id"] for finding in body["report"]["findings"]}
+    evaluations = {evaluation["rule_id"]: evaluation for evaluation in body["evaluations"]}
     assert response.status_code == 200
     assert body["report"]["status"] == "FAIL"
+    assert body["report"]["error_count"] == 1
+    assert body["report"]["warning_count"] == 10
     assert {"MMTRACE003", "MMTRACE005"} <= rule_ids
+    assert evaluations["MMTRACE003"]["coverage"] == "PARTIAL"
+    assert evaluations["MMTRACE003"]["outcome"] == "ERROR"
+    assert evaluations["MMTRACE003"]["finding_count"] == 1
+    assert evaluations["MMTRACE005"]["coverage"] == "FULL"
+    assert evaluations["MMTRACE005"]["outcome"] == "WARNING"
+    assert evaluations["MMTRACE005"]["finding_count"] == 10
     archive.unlink()
+
+
+def test_analyze_holo4_real_evaluations_and_reopen() -> None:
+    analyze_response = post_analyze(REAL_HOLO4, "holo4")
+    body = analyze_response.json()
+    analysis_id = body["analysis_id"]
+    evaluations = {evaluation["rule_id"]: evaluation for evaluation in body["evaluations"]}
+
+    assert analyze_response.status_code == 200
+    assert body["report"]["status"] == "FAIL"
+    assert body["report"]["error_count"] == 5
+    assert body["report"]["warning_count"] == 0
+    assert len(body["evaluations"]) == 7
+    assert evaluations["MMTRACE007"]["coverage"] == "PARTIAL"
+    assert evaluations["MMTRACE007"]["outcome"] == "ERROR"
+    assert evaluations["MMTRACE007"]["applicable_units"] == 100
+    assert evaluations["MMTRACE007"]["evaluable_units"] == 25
+    assert evaluations["MMTRACE007"]["not_evaluable_units"] == 75
+    assert evaluations["MMTRACE007"]["finding_count"] == 5
+    missing = evaluations["MMTRACE007"]["missing_evidence"]
+    assert len(missing) == 1
+    assert missing[0]["code"] == "execution.status"
+    assert missing[0]["count"] == 75
+    assert len(missing[0]["step_ids"]) == 75
+
+    reopened = client.get(f"/api/analyses/{analysis_id}")
+
+    assert reopened.status_code == 200
+    assert reopened.json()["evaluations"] == body["evaluations"]
 
 
 def test_analyze_holo4_trace(tmp_path: Path) -> None:
@@ -237,6 +296,78 @@ def test_analyze_with_valid_screenshot_zip_maps_observations(tmp_path: Path) -> 
     assert screenshots["obs-before"].startswith(
         f"/api/artifacts/{response.json()['analysis_id']}/"
     )
+
+
+def test_list_analyses_does_not_include_evaluations() -> None:
+    response = post_analyze(FIXTURES / "valid_trace.json", "generic")
+    summaries = client.get("/api/analyses").json()
+
+    assert response.status_code == 200
+    assert summaries
+    assert "evaluations" not in summaries[0]
+
+
+def test_get_detail_reads_frozen_evaluations_without_rerunning_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    analyze_response = post_analyze(FIXTURES / "coordinate_out_of_frame.json", "generic")
+    body = analyze_response.json()
+    analysis_id = body["analysis_id"]
+
+    def forbidden_evaluate(*args, **kwargs):
+        raise AssertionError("EvaluationEngine must not run during GET detail")
+
+    monkeypatch.setattr(backend_app.EvaluationEngine, "evaluate", forbidden_evaluate)
+
+    detail_response = client.get(f"/api/analyses/{analysis_id}")
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["evaluations"] == body["evaluations"]
+
+
+def test_corrupt_new_evaluation_snapshot_returns_sanitized_500(tmp_path: Path) -> None:
+    analyze_response = post_analyze(FIXTURES / "valid_trace.json", "generic")
+    analysis_id = analyze_response.json()["analysis_id"]
+    evaluation_path = (
+        tmp_path
+        / "mmtrace-home"
+        / "analyses"
+        / analysis_id
+        / "evaluation"
+        / "evaluations.json"
+    )
+    evaluation_path.unlink()
+
+    client_without_server_exceptions = TestClient(app, raise_server_exceptions=False)
+    response = client_without_server_exceptions.get(f"/api/analyses/{analysis_id}")
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "INTERNAL_ERROR"
+
+
+def test_evaluation_failure_does_not_persist_analysis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken_evaluate(*args, **kwargs):
+        raise RuntimeError("evaluation failed")
+
+    monkeypatch.setattr(backend_app.EvaluationEngine, "evaluate", broken_evaluate)
+    client_without_server_exceptions = TestClient(app, raise_server_exceptions=False)
+
+    response = post_analyze_with_client(
+        client_without_server_exceptions,
+        FIXTURES / "valid_trace.json",
+        "generic",
+    )
+
+    assert response.status_code == 500
+    home = tmp_path / "mmtrace-home"
+    db_path = home / "mmtrace.db"
+    if db_path.exists():
+        with sqlite3.connect(db_path) as connection:
+            assert connection.execute("SELECT COUNT(*) FROM analyses").fetchone()[0] == 0
+    assert not list((home / "analyses").glob("*")) if (home / "analyses").exists() else True
 
 
 def test_get_mapped_artifact_returns_image_content_type(tmp_path: Path) -> None:

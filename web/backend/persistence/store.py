@@ -16,6 +16,9 @@ from pathlib import Path
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from mmtrace.evaluation import RuleEvaluation
 from mmtrace.schema.finding import Severity
 
 from web.backend.persistence.db import SCHEMA_VERSION, PersistenceError, connect
@@ -29,8 +32,20 @@ from web.backend.persistence.models import (
 
 SNAPSHOT_MANIFEST = ".mmtrace-snapshot.json"
 SNAPSHOT_FORMAT = "mmtrace-analysis-snapshot"
+EVALUATION_SNAPSHOT_FORMAT = "mmtrace-rule-evaluations"
+EVALUATION_SNAPSHOT_VERSION = 1
+RULE_EVALUATIONS_FEATURE = "rule_evaluations"
+EVALUATION_RELPATH = Path("evaluation") / "evaluations.json"
 
 logger = logging.getLogger(__name__)
+
+
+class EvaluationSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    format: str
+    schema_version: int = Field(ge=1)
+    evaluations: list[RuleEvaluation]
 
 
 class PersistenceStore:
@@ -160,12 +175,15 @@ class PersistenceStore:
 
             trace = _read_json(_resolve_stored_file(self.root, row["normalized_trace_relpath"]))
             report = _read_json(_resolve_stored_file(self.root, row["report_relpath"]))
+            manifest = _read_snapshot_manifest(analysis_dir / SNAPSHOT_MANIFEST)
+            evaluations = _read_persisted_evaluations(analysis_dir, manifest)
             screenshots = self._screenshot_mapping(connection, analysis_id)
 
         return AnalysisDetail(
             analysis_id=analysis_id,
             trace=trace,
             report=report,
+            evaluations=evaluations,
             artifacts={"screenshots": screenshots},
         )
 
@@ -194,10 +212,12 @@ class PersistenceStore:
         source_dir = temp_dir / "source"
         normalized_dir = temp_dir / "normalized"
         report_dir = temp_dir / "report"
+        evaluation_dir = temp_dir / "evaluation"
         artifact_dir = temp_dir / "artifacts"
         source_dir.mkdir()
         normalized_dir.mkdir()
         report_dir.mkdir()
+        evaluation_dir.mkdir()
         artifact_dir.mkdir()
 
         source_filename = _safe_filename(snapshot.source_filename)
@@ -215,7 +235,9 @@ class PersistenceStore:
             snapshot.report.model_dump_json(indent=2) + "\n",
             encoding="utf-8",
         )
-        _write_snapshot_manifest(temp_dir, snapshot.analysis_id)
+
+        evaluation_path = evaluation_dir / "evaluations.json"
+        _write_evaluation_snapshot(evaluation_path, snapshot.evaluations)
 
         artifacts = []
         used_names: set[str] = set()
@@ -241,7 +263,7 @@ class PersistenceStore:
                 }
             )
 
-        return {
+        metadata = {
             "analysis": {
                 "analysis_id": snapshot.analysis_id,
                 "trace_id": snapshot.trace.trace_id,
@@ -268,6 +290,12 @@ class PersistenceStore:
                 ),
                 "report_relpath": _relpath(report_path, temp_dir, snapshot.analysis_id),
             },
+            "features": [RULE_EVALUATIONS_FEATURE],
+            "evaluation_relpath": _relpath(
+                evaluation_path,
+                temp_dir,
+                snapshot.analysis_id,
+            ),
             "findings": [
                 {
                     "analysis_id": snapshot.analysis_id,
@@ -281,6 +309,12 @@ class PersistenceStore:
             ],
             "artifacts": artifacts,
         }
+        _write_snapshot_manifest(
+            temp_dir,
+            snapshot.analysis_id,
+            features=[RULE_EVALUATIONS_FEATURE],
+        )
+        return metadata
 
     def _insert_rows(self, connection, metadata: dict[str, object]) -> None:
         analysis = metadata["analysis"]
@@ -422,19 +456,34 @@ def _validate_snapshot_files(temp_dir: Path, metadata: dict[str, object]) -> Non
         raise PersistenceError("snapshot manifest analysis_id mismatch")
     if manifest.get("schema_version") != SCHEMA_VERSION:
         raise PersistenceError("snapshot manifest schema_version mismatch")
-
-
-def _write_snapshot_manifest(snapshot_dir: Path, analysis_id: str) -> None:
-    (snapshot_dir / SNAPSHOT_MANIFEST).write_text(
-        json.dumps(
-            {
-                "format": SNAPSHOT_FORMAT,
-                "analysis_id": analysis_id,
-                "schema_version": SCHEMA_VERSION,
-            },
-            sort_keys=True,
+    features = _manifest_features(manifest)
+    if RULE_EVALUATIONS_FEATURE in features:
+        evaluation_relpath = metadata.get("evaluation_relpath")
+        if not isinstance(evaluation_relpath, str):
+            raise PersistenceError("snapshot evaluation metadata missing")
+        evaluation_path = temp_dir / Path(evaluation_relpath).relative_to(
+            f"analyses/{analysis['analysis_id']}"
         )
-        + "\n",
+        if not evaluation_path.is_file():
+            raise PersistenceError(f"required snapshot file missing: {evaluation_relpath}")
+        _read_evaluation_snapshot(evaluation_path)
+
+
+def _write_snapshot_manifest(
+    snapshot_dir: Path,
+    analysis_id: str,
+    *,
+    features: list[str] | None = None,
+) -> None:
+    payload: dict[str, object] = {
+        "format": SNAPSHOT_FORMAT,
+        "analysis_id": analysis_id,
+        "schema_version": SCHEMA_VERSION,
+    }
+    if features is not None:
+        payload["features"] = features
+    (snapshot_dir / SNAPSHOT_MANIFEST).write_text(
+        json.dumps(payload, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
@@ -449,7 +498,55 @@ def _read_snapshot_manifest(path: Path) -> dict[str, object]:
         raise PersistenceError("invalid MMTrace snapshot manifest")
     if manifest.get("format") != SNAPSHOT_FORMAT:
         raise PersistenceError("invalid MMTrace snapshot format")
+    _manifest_features(manifest)
     return manifest
+
+
+def _manifest_features(manifest: dict[str, object]) -> set[str]:
+    raw_features = manifest.get("features", [])
+    if raw_features is None:
+        return set()
+    if not isinstance(raw_features, list) or not all(
+        isinstance(feature, str) for feature in raw_features
+    ):
+        raise PersistenceError("invalid MMTrace snapshot features")
+    return set(raw_features)
+
+
+def _write_evaluation_snapshot(path: Path, evaluations: list[RuleEvaluation]) -> None:
+    snapshot = EvaluationSnapshot(
+        format=EVALUATION_SNAPSHOT_FORMAT,
+        schema_version=EVALUATION_SNAPSHOT_VERSION,
+        evaluations=evaluations,
+    )
+    path.write_text(snapshot.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+
+def _read_persisted_evaluations(
+    analysis_dir: Path,
+    manifest: dict[str, object],
+) -> list[RuleEvaluation] | None:
+    features = _manifest_features(manifest)
+    if RULE_EVALUATIONS_FEATURE not in features:
+        return None
+    return _read_evaluation_snapshot(analysis_dir / EVALUATION_RELPATH).evaluations
+
+
+def _read_evaluation_snapshot(path: Path) -> EvaluationSnapshot:
+    try:
+        with path.open(encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersistenceError("invalid MMTrace evaluation snapshot") from exc
+    try:
+        snapshot = EvaluationSnapshot.model_validate(payload)
+    except ValidationError as exc:
+        raise PersistenceError("invalid MMTrace evaluation snapshot") from exc
+    if snapshot.format != EVALUATION_SNAPSHOT_FORMAT:
+        raise PersistenceError("invalid MMTrace evaluation snapshot format")
+    if snapshot.schema_version != EVALUATION_SNAPSHOT_VERSION:
+        raise PersistenceError("unsupported MMTrace evaluation snapshot schema version")
+    return snapshot
 
 
 def _is_reconcilable_orphan_candidate(candidate: Path, analyses_root: Path) -> bool:
@@ -548,8 +645,14 @@ def _sha256(path: Path) -> str:
 
 
 def _read_json(path: Path) -> dict:
-    with path.open(encoding="utf-8") as handle:
-        return json.load(handle)
+    try:
+        with path.open(encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersistenceError("persisted analysis snapshot file is missing or corrupt") from exc
+    if not isinstance(payload, dict):
+        raise PersistenceError("persisted analysis snapshot file is missing or corrupt")
+    return payload
 
 
 def _resolve_stored_file(root: Path, relpath: str) -> Path:
