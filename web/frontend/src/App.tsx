@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Home, ListTree, Menu, RefreshCw, ShieldCheck, Upload } from "lucide-react";
 import { analyzeTrace, getAnalysis, listAnalyses, TraceAnalyzeError } from "./api";
+import { CoveragePanel } from "./components/CoveragePanel";
 import { FindingsPanel } from "./components/FindingsPanel";
 import { StepInspector } from "./components/StepInspector";
 import { TraceLoader } from "./components/TraceLoader";
@@ -462,19 +463,14 @@ function App() {
           </main>
           )}
           {activeTab === "coverage" && (
-            <main className="placeholder-view">
-              <section className="empty-state" role="status">
-                <h2>Coverage</h2>
-                <p>Coverage data is not included in the current API response.</p>
-              </section>
-            </main>
+            <CoveragePanel evaluations={analysis.evaluations} />
           )}
           {activeTab === "raw" && (
             <main className="raw-trace-view">
               <pre className="raw-block">{JSON.stringify(analysis.trace, null, 2)}</pre>
             </main>
           )}
-          {(trajectoryOpen || findingOpen) && (
+          {activeTab === "inspector" && (trajectoryOpen || findingOpen) && (
             <button
               type="button"
               className="drawer-backdrop"
@@ -485,23 +481,27 @@ function App() {
               }}
             />
           )}
-          <div className={`mobile-drawer trajectory-drawer ${trajectoryOpen ? "open" : ""}`}>
-            <TrajectoryList
-              findings={analysis.report.findings}
-              selectedStepId={selectedStep?.step_id ?? null}
-              steps={analysis.trace.steps}
-              onSelectStep={handleStepSelect}
-            />
-          </div>
-          <div className={`mobile-drawer finding-drawer ${findingOpen ? "open" : ""}`}>
-            <FindingsPanel
-              findings={analysis.report.findings}
-              onClose={() => setFindingOpen(false)}
-              selectedFinding={selectedFinding}
-              selectedStepId={selectedStep?.step_id ?? null}
-              onSelectFinding={handleFindingSelect}
-            />
-          </div>
+          {activeTab === "inspector" && (
+            <>
+              <div className={`mobile-drawer trajectory-drawer ${trajectoryOpen ? "open" : ""}`}>
+                <TrajectoryList
+                  findings={analysis.report.findings}
+                  selectedStepId={selectedStep?.step_id ?? null}
+                  steps={analysis.trace.steps}
+                  onSelectStep={handleStepSelect}
+                />
+              </div>
+              <div className={`mobile-drawer finding-drawer ${findingOpen ? "open" : ""}`}>
+                <FindingsPanel
+                  findings={analysis.report.findings}
+                  onClose={() => setFindingOpen(false)}
+                  selectedFinding={selectedFinding}
+                  selectedStepId={selectedStep?.step_id ?? null}
+                  onSelectFinding={handleFindingSelect}
+                />
+              </div>
+            </>
+          )}
         </div>
       ) : route.view === "analysis" ? (
         <main className="detail-state-workspace workspace-shell" aria-label="Trace loading">

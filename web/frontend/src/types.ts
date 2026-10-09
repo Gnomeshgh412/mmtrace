@@ -5,7 +5,32 @@ export interface AnalysisResponse {
   analysis_id: string;
   trace: Trace;
   report: Report;
+  evaluations: RuleEvaluation[] | null;
   artifacts: Artifacts;
+}
+
+export type EvaluationOutcome = "PASS" | "WARNING" | "ERROR" | "NONE";
+export type EvaluationCoverage =
+  | "FULL"
+  | "PARTIAL"
+  | "NOT_EVALUABLE"
+  | "NOT_APPLICABLE";
+
+export interface MissingEvidence {
+  code: string;
+  count: number;
+  step_ids: string[];
+}
+
+export interface RuleEvaluation {
+  rule_id: string;
+  coverage: EvaluationCoverage;
+  outcome: EvaluationOutcome;
+  applicable_units: number;
+  evaluable_units: number;
+  not_evaluable_units: number;
+  finding_count: number;
+  missing_evidence: MissingEvidence[];
 }
 
 export interface AnalysisSummary {

@@ -1,4 +1,4 @@
-import { ArrowLeft, CircleAlert, CircleCheck, Code2, Info } from "lucide-react";
+import { ArrowLeft, CircleAlert, CircleCheck, Code2, Info, ShieldCheck } from "lucide-react";
 import type { AnalysisResponse } from "../types";
 
 type TraceTab = "inspector" | "coverage" | "raw";
@@ -18,6 +18,14 @@ function metadataValue(metadata: Record<string, unknown> | null | undefined, key
   return String(value);
 }
 
+function metadataLine(parts: Array<string | null>) {
+  return parts.filter((part): part is string => Boolean(part)).join(" · ");
+}
+
+function formatCountLabel(count: number, singular: string, plural = `${singular}s`) {
+  return count === 1 ? singular : plural;
+}
+
 export function TraceSummary({
   activeTab,
   analysis,
@@ -28,8 +36,9 @@ export function TraceSummary({
 }: TraceSummaryProps) {
   const { trace, report } = analysis;
   const title = trace.trace_id ?? "Untitled trace";
-  const benchmark = metadataValue(trace.metadata, "benchmark") ?? "Benchmark unknown";
-  const agent = trace.agent ?? metadataValue(trace.metadata, "model") ?? "Unknown model";
+  const benchmark = metadataValue(trace.metadata, "benchmark");
+  const agent = trace.agent ?? metadataValue(trace.metadata, "model");
+  const headerMetadata = metadataLine([agent, benchmark, `${trace.steps.length} steps`]);
   const StatusIcon = report.status === "PASS" ? CircleCheck : CircleAlert;
 
   return (
@@ -40,8 +49,8 @@ export function TraceSummary({
       </button>
       <div className="summary-main">
         <div className="summary-title-row">
-          <h1>{title}</h1>
-          <span className={`status-pill status-${report.status.toLowerCase()}`}>
+          <h1 title={title}>{title}</h1>
+          <span className={`status-pill status-${report.status.toLowerCase()} desktop-status`}>
             <StatusIcon size={13} aria-hidden="true" />
             {report.status}
           </span>
@@ -58,11 +67,11 @@ export function TraceSummary({
                 </div>
                 <div>
                   <dt>Model</dt>
-                  <dd>{agent}</dd>
+                  <dd>{agent ?? "Not available"}</dd>
                 </div>
                 <div>
                   <dt>Benchmark</dt>
-                  <dd>{benchmark}</dd>
+                  <dd>{benchmark ?? "Not available"}</dd>
                 </div>
                 <div>
                   <dt>Trace ID</dt>
@@ -73,18 +82,24 @@ export function TraceSummary({
           </details>
         </div>
         <div className="summary-meta">
-          <span>{agent} · {benchmark} · {trace.steps.length} steps</span>
+          <span>{headerMetadata}</span>
         </div>
       </div>
-      <div className="summary-counts">
-        <span className="summary-count count-error">
-          <strong>{report.error_count}</strong>
-          <span>Errors</span>
+      <div className="summary-signal-row">
+        <span className={`status-pill status-${report.status.toLowerCase()} mobile-status`}>
+          <StatusIcon size={13} aria-hidden="true" />
+          {report.status}
         </span>
-        <span className="summary-count count-warning">
-          <strong>{report.warning_count}</strong>
-          <span>Warnings</span>
-        </span>
+        <div className="summary-counts">
+          <span className="summary-count count-error">
+            <strong>{report.error_count}</strong>
+            <span>{formatCountLabel(report.error_count, "Error")}</span>
+          </span>
+          <span className="summary-count count-warning">
+            <strong>{report.warning_count}</strong>
+            <span>{formatCountLabel(report.warning_count, "Warning")}</span>
+          </span>
+        </div>
       </div>
       <nav className="trace-tabs" aria-label="Trace views">
         <button
@@ -96,6 +111,14 @@ export function TraceSummary({
         </button>
         <button
           type="button"
+          className={activeTab === "coverage" ? "active" : ""}
+          onClick={() => onTabChange("coverage")}
+        >
+          <ShieldCheck size={14} aria-hidden="true" />
+          Coverage
+        </button>
+        <button
+          type="button"
           className={activeTab === "raw" ? "active" : ""}
           onClick={() => onTabChange("raw")}
         >
@@ -103,14 +126,16 @@ export function TraceSummary({
           Raw Trace
         </button>
       </nav>
-      <div className="summary-actions">
-        <button type="button" className="drawer-toggle trajectory-toggle" onClick={onToggleTrajectory}>
-          Trajectory
-        </button>
-        <button type="button" className="drawer-toggle finding-toggle" onClick={onToggleFinding}>
-          Finding
-        </button>
-      </div>
+      {activeTab === "inspector" && (
+        <div className="summary-actions">
+          <button type="button" className="drawer-toggle trajectory-toggle" onClick={onToggleTrajectory}>
+            Trajectory
+          </button>
+          <button type="button" className="drawer-toggle finding-toggle" onClick={onToggleFinding}>
+            Finding
+          </button>
+        </div>
+      )}
     </header>
   );
 }
