@@ -2,48 +2,91 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Deterministic reliability checking and trace inspection for multimodal and computer-use agents.
+[![Tests](https://github.com/Gnomeshgh412/mmtrace/actions/workflows/tests.yml/badge.svg)](https://github.com/Gnomeshgh412/mmtrace/actions/workflows/tests.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-MMTrace verifies whether an agent trajectory has a trustworthy evidence chain:
+Deterministic reliability checking, trace inspection, and evidence-aware coverage for multimodal and computer-use agents.
+
+MMTrace checks deterministic reliability invariants across the evidence chain of recorded agent trajectories:
 
 ```text
 Observation -> Model Context -> Action -> Execution -> Post-State
 ```
 
-It is intentionally small. MMTrace is not a general agent debugger, semantic judge, recovery framework, dashboard platform, or agent runtime.
+It reports both what failed and where the recorded evidence was insufficient to evaluate a check. Think of it as a pytest / ESLint-style reliability checker for recorded multimodal agent trajectories.
 
-## Real-World Execution Failure
+MMTrace is intentionally small. It is not a general observability platform, semantic judge, recovery framework, agent runtime, or proof that an agent completed a task correctly.
 
-MMTrace analyzed an unmodified public Holo4 trajectory from the OSWorld benchmark.
+## Why MMTrace
+
+Multimodal and computer-use agents often leave incomplete or inconsistent trajectory evidence. A trace may be hard to trust when screenshots are missing, model context does not include the observed state, coordinates do not match a recorded frame, tool execution failed, or a state-changing action has no post-state verification.
+
+MMTrace normalizes recorded traces, runs deterministic checks over the evidence that is actually present, and keeps the boundary visible when evidence is missing.
 
 ![MMTrace Holo4 real execution failure](docs/assets/holo4-real-execution-failure.png)
 
-The executor explicitly reported failures at five steps, including `xdotool`
-errors and Python `NameError`, `AttributeError`, and `IndexError` exceptions.
+Real Holo4 / OSWorld trajectory: MMTrace surfaces explicit execution failures with observation, action, execution, and post-state evidence. The screenshot does not claim that the displayed post-state is the exact immediate frame after the error.
 
-MMTrace surfaces these machine-verifiable failures as:
+## Findings vs. Evidence Coverage
 
-- 5 × `MMTRACE007` - Explicit Execution Failure
+No finding does not imply a fully verified trace.
 
-The screenshot above shows one of these failures in the Trace Inspector.
+A rule can produce no finding because the required evidence was present and the evaluated units passed, or because the trace did not contain enough evidence to evaluate that rule. MMTrace v0.2 distinguishes those cases explicitly.
 
-One concrete finding occurred at source Step 21, normalized as MMTrace Step 22:
+- Findings are deterministic reliability issues detected in recorded evidence.
+- Report `PASS` means no `ERROR` finding was detected.
+- Report `FAIL` means at least one `ERROR` finding was detected.
+- Warnings alone do not make the report fail.
+- Outcome is the per-rule result: `PASS`, `WARNING`, `ERROR`, or `NONE`.
+- Coverage is the per-rule evaluability state: `FULL`, `PARTIAL`, `NOT_EVALUABLE`, or `NOT_APPLICABLE`.
+- Missing evidence explains why applicable units could not be checked.
+
+`PASS` does not mean every rule was fully evaluated, the task was semantically correct, or the whole trace was verified.
+
+### Holo4 Coverage Boundary
+
+The real Holo4 / OSWorld case has this report:
 
 ```text
-NameError: name 'pyautoguiBUTTONDOWN' is not defined
+Status: FAIL
+Errors: 5
+Warnings: 0
 ```
 
-These errors occur within a failed real-world trajectory. MMTrace does not claim
-that they are proven to be the sole or direct cause of the overall task failure.
+MMTrace detected five explicit execution failures, all reported as `MMTRACE007`. The Coverage view also shows the boundary of that conclusion: only 25 / 100 applicable action units had enough execution-status evidence to evaluate `MMTRACE007`; 75 were not evaluable because `execution.status` was missing.
 
-Source:
+![Holo4 evidence coverage](docs/assets/holo4-evidence-coverage.png)
 
-- Dataset: [`Hcompany/trajectories`](https://huggingface.co/datasets/Hcompany/trajectories)
-- Benchmark: [OSWorld](https://github.com/xlang-ai/OSWorld)
-- Model: Holo4 27B
-- Trajectory: `libreoffice-calc-13-23ff35a8`
+`MMTRACE007` is `ERROR` with `PARTIAL` coverage: 5 findings, 25 / 100 evaluated, and `Execution status x75` missing.
 
-Reproduce the example locally:
+### Browser Use: PASS Is Not Fully Verified
+
+The Browser Use example has this report:
+
+```text
+Status: PASS
+Errors: 0
+Warnings: 0
+```
+
+That means no error finding was detected in the currently evaluable evidence. Several rules are still `NOT_EVALUABLE` because the exported history does not contain required evidence such as true model input, timestamps, action coordinates, or execution status.
+
+![Browser Use evidence coverage](docs/assets/browser-use-evidence-coverage.png)
+
+`MMTRACE007` is `PASS` with `PARTIAL` coverage: 1 / 4 action units were evaluable, while 3 lacked execution status.
+
+## Quick Start
+
+Install from the repository:
+
+```bash
+git clone https://github.com/Gnomeshgh412/mmtrace.git
+cd mmtrace
+python3 -m pip install -e .
+```
+
+Run the included Holo4 example:
 
 ```bash
 mmtrace check \
@@ -51,32 +94,79 @@ mmtrace check \
   --adapter holo4
 ```
 
-Expected result:
+Expected summary:
 
 ```text
 Status: FAIL
 Errors: 5
 Warnings: 0
-MMTRACE007: 5
+Rule findings:
+MMTRACE007 x5
 ```
 
-## Why MMTrace
+The CLI text formatter currently reports findings. Evidence Coverage is currently available in the persisted Web Inspector, not in CLI text output.
 
-Agent failure is not always reasoning failure. A trace can be hard to trust when screenshots are missing, model context does not reference the observed state, coordinates do not match the frame, actions lack execution evidence, or successful actions have no post-action verification.
+CLI reference:
 
-MMTrace focuses on deterministic checks over recorded evidence. When required evidence is absent, rules skip instead of guessing.
+```bash
+mmtrace check INPUT
+mmtrace check INPUT --adapter generic
+mmtrace check INPUT --adapter browser-use
+mmtrace check INPUT --adapter osworld
+mmtrace check INPUT --adapter holo4
+mmtrace check INPUT --format json
+mmtrace check INPUT --output report.json
+mmtrace check INPUT --rule MMTRACE003
+```
 
-## What MMTrace Does
+Exit codes:
 
-- Normalizes agent traces into a common schema
-- Runs deterministic reliability rules
-- Produces evidence-backed findings
-- Exposes a CLI and JSON report format
-- Provides a local FastAPI backend and React Trace Inspector for visual review
+```text
+0  Check completed and no ERROR findings were reported.
+1  Check completed and at least one ERROR finding was reported.
+2  Input, argument, schema, or adapter error.
+```
+
+## Web Workflow
+
+Run the local backend:
+
+```bash
+python3 -m pip install -e ".[web,test]"
+python3 -m uvicorn web.backend.app:app \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+Run the frontend:
+
+```bash
+cd web/frontend
+npm ci
+npm run dev
+```
+
+Open the URL printed by Vite. The frontend uses a development proxy for `/api`.
+
+The v0.2 workflow is:
+
+```text
+Import Trace
+  -> Adapter normalization
+  -> CheckEngine findings
+  -> EvaluationEngine coverage
+  -> Frozen local snapshot
+  -> Traces workspace
+  -> Inspector
+  -> Evidence Coverage
+  -> Reopen persisted analysis
+```
+
+Analyses survive backend restart and can be reopened from the Traces workspace.
 
 ## Reliability Rules
 
-| Rule | Finding | Severity |
+| Rule | Check | Severity |
 | --- | --- | --- |
 | `MMTRACE001` | Missing Observation | ERROR |
 | `MMTRACE002` | Observation Not In Model Context | ERROR |
@@ -86,152 +176,86 @@ MMTrace focuses on deterministic checks over recorded evidence. When required ev
 | `MMTRACE006` | Missing Post-Action Verification | WARNING |
 | `MMTRACE007` | Explicit Execution Failure | ERROR |
 
-Not every adapter can provide the evidence needed for every rule. Implemented does not mean evaluable.
+Rule evaluability depends on the evidence required by each check. Adapters normalize recorded evidence; they do not fabricate missing evidence.
+
+## Real Examples
+
+| Example | Adapter | Report | Coverage highlight | Demonstrates |
+| --- | --- | --- | --- | --- |
+| Holo4 / OSWorld | `holo4` | FAIL · 5E · 0W | `MMTRACE007`: ERROR + PARTIAL, 25 / 100 | Explicit executor failures plus coverage boundary |
+| Browser Use | `browser-use` | PASS · 0E · 0W | Several `NOT_EVALUABLE`; `MMTRACE007`: PASS + PARTIAL, 1 / 4 | PASS is not fully verified |
+| OSWorld | `osworld` | FAIL · 1E · 10W | `MMTRACE003`: PARTIAL / ERROR; `MMTRACE005`: FULL / WARNING | Coordinate boundary and stale-observation checks |
+
+Example paths:
+
+- `examples/holo4_real_execution_failure/`
+- `examples/browser_use_real/`
+- `examples/osworld_real_failure/`
+
+The Holo4 example preserves an unmodified public trajectory from [`Hcompany/trajectories`](https://huggingface.co/datasets/Hcompany/trajectories) for [OSWorld](https://github.com/xlang-ai/OSWorld) task `libreoffice-calc-13-23ff35a8`, model Holo4 27B. The fixture contains no fault injection and no synthetic execution metadata.
+
+The Browser Use example is a real no-login Browser Use history against `example.com`. Its `PASS` report is useful precisely because the coverage view shows which checks were not evaluable from the exported history.
+
+## Supported Adapters
+
+- `generic`: loads the normalized MMTrace JSON schema directly.
+- `browser-use`: normalizes Browser Use history exports without fabricating missing model input or execution-status evidence.
+- `osworld`: normalizes OSWorld `traj.jsonl` trajectories and screenshot references.
+- `holo4`: normalizes Holo4 trajectory JSON from OSWorld-style tasks, including executor/tool output when present.
 
 ## Architecture
 
-```text
-Agent Trace
-    |
-    v
-Adapter
-    |
-    v
-MMTrace Core
-    |-- CLI / JSON Report
-    |
-    `-- FastAPI
-            |
-            v
-       Trace Inspector
+```mermaid
+flowchart LR
+    S[Source trajectory]
+    A[Adapter]
+    T[Normalized Trace]
+    C[CheckEngine]
+    F[Findings]
+    E[EvaluationEngine]
+    R[Rule Evaluations]
+    P[Frozen Local Snapshot]
+    W[Traces / Inspector / Coverage]
+
+    S --> A --> T
+    T --> C --> F
+    T --> E
+    F --> E --> R
+    T --> P
+    F --> P
+    R --> P
+    P --> W
 ```
 
-MMTrace Core owns schema, adapters, deterministic checks, and reports. FastAPI owns HTTP transport, uploads, temporary screenshot artifacts, and serialization. React owns visualization and interaction only.
+`CheckEngine` produces findings. Those findings determine report status: any `ERROR` finding means `FAIL`.
 
-Web artifact URLs are transport-layer data and are not written into `Trace`, `Observation`, `Finding`, or `Report`.
+`EvaluationEngine` produces rule evaluability and coverage. It explains whether each rule was fully evaluated, partially evaluated, not evaluable, or not applicable from the recorded evidence.
 
-## CLI Quick Start
+## Local Persistence
 
-Install in editable mode:
-
-```bash
-python3 -m pip install -e .
-```
-
-Check a standard MMTrace JSON file:
-
-```bash
-mmtrace check trajectory.json
-```
-
-Check a Browser Use history file:
-
-```bash
-mmtrace check history.json --adapter browser-use
-```
-
-Check an OSWorld `traj.jsonl` file:
-
-```bash
-mmtrace check traj.jsonl --adapter osworld
-```
-
-Check a Holo4 trajectory JSON file:
-
-```bash
-mmtrace check trajectory.json --adapter holo4
-```
-
-Emit machine-readable JSON:
-
-```bash
-mmtrace check history.json \
-  --adapter browser-use \
-  --format json
-```
-
-Run a single rule:
-
-```bash
-mmtrace check trajectory.json \
-  --rule MMTRACE003
-```
-
-## Trace Inspector
-
-The Web MVP provides a local Trace Inspector with:
-
-- Adapter selection for `generic`, `browser-use`, `osworld`, and `holo4`
-- JSON trace upload
-- Optional screenshot ZIP upload
-- Trace summary, trajectory list, step inspector, and findings panel
-- Real screenshot viewing through `/api/artifacts/...`
-- Before / After observation switching when both screenshots are available
-
-Screenshot artifacts are optional. If no ZIP is uploaded, analysis still works and the UI reports screenshot artifacts as unavailable.
-
-## Run Locally
-
-Backend:
-
-```bash
-python3 -m pip install -e ".[web,test]"
-python3 -m uvicorn web.backend.app:app \
-  --host 127.0.0.1 \
-  --port 8000
-```
-
-Frontend:
-
-```bash
-cd web/frontend
-npm ci
-npm run dev
-```
-
-Open the URL printed by Vite. The frontend uses a development proxy for `/api`, so it does not require CORS configuration for local development.
-
-## Included Real Examples
-
-| Example | Adapter | Result | Purpose |
-| --- | --- | --- | --- |
-| Holo4 / OSWorld | `holo4` | FAIL · 5 ERROR | Real explicit execution failure validation |
-| OSWorld | `osworld` | FAIL · 1 ERROR / 10 WARNING | Coordinate and stale-observation regression |
-| Browser Use | `browser-use` | PASS | Real trace / false-positive regression |
-
-Paths:
-
-- `examples/holo4_real_execution_failure/`
-- `examples/osworld_real_failure/`
-- `examples/browser_use_real/`
-
-See each example directory for provenance and reproduction details.
-
-## Evidence Limitations
-
-Implemented does not mean evaluable.
-
-Rules only run when the required evidence is present. No finding does not prove the agent was correct, safe, or fully evaluated.
-
-Browser Use ordinary history currently has important limitations:
-
-- It does not prove true model input messages, so `MMTRACE002` is usually not evaluable.
-- Coordinates, viewport dimensions, and coordinate-space metadata may be unavailable.
-- Exact observation/action timestamps may be unavailable.
-- Not every implemented rule is evaluable on every trace.
-- Absence of findings is not proof of agent correctness.
-
-The Trace Inspector keeps this distinction explicit. Its PASS state means no deterministic reliability findings were found for the currently evaluable evidence.
-
-## Exit Codes
+MMTrace is local-first. The web workflow stores persisted analyses under:
 
 ```text
-0  Check completed and no ERROR findings were reported.
-1  Check completed and at least one ERROR finding was reported.
-2  Input, argument, schema, or adapter error.
+~/.mmtrace/
 ```
 
-Warnings do not cause exit code `1`.
+The local workspace contains a SQLite catalog plus frozen analysis snapshots. Set `MMTRACE_HOME` to use a different storage location:
+
+```bash
+MMTRACE_HOME=/path/to/mmtrace-home python3 -m uvicorn web.backend.app:app
+```
+
+MMTrace's local workspace persists MMTrace analyses locally. It does not make claims about where the original agent, model, or benchmark workflow sent data before the trace was imported.
+
+## Limitations and Non-goals
+
+- MMTrace checks deterministic trajectory reliability invariants.
+- It does not judge semantic task correctness.
+- It does not prove that an agent is correct or safe.
+- It depends on evidence exposed by the source trace and adapter.
+- It marks rules `NOT_EVALUABLE` when required evidence is absent.
+- It does not infer missing evidence with an LLM or vision model.
+- `FULL` coverage means all applicable units for that rule had enough recorded evidence to be evaluated; it does not mean the task was correct.
 
 ## Development
 
@@ -251,35 +275,18 @@ npm run typecheck
 npm run build
 ```
 
-## CI
-
-GitHub Actions currently runs:
-
-- Python 3.11 and 3.12
-- `python -m pip install -e ".[web,test]"`
-- `python -m pytest -q`
-- `python -m pip check`
-- Node 20
-- `npm ci`
-- `npm run typecheck`
-- `npm run build`
-
-CI does not require secrets and does not call SiliconFlow, Browser Use, or any agent runtime.
-
-## Packaging Boundary
-
-The Python package is the MMTrace core package. The Web MVP is currently intended for source-checkout development from this repository.
-
-Do not assume that a wheel-only installation includes a standalone packaged frontend application.
+CI currently runs Python 3.11 / 3.12 tests, `pip check`, frontend typecheck, and frontend build.
 
 ## Project Status
 
-MMTrace v0.1.0 is the first public release of the Core + Trace Inspector MVP.
+The `main` branch contains the upcoming v0.2 feature set, including local persistence, the Traces workspace, and evidence-aware rule coverage.
 
-It is an early, local-first reliability checker and trace inspector, not a production platform.
+Latest tagged release: `v0.1.0`
+
+The package version remains `0.1.0` until the v0.2 release polish and release step are complete.
 
 ## License
 
-MMTrace is released under the MIT License.
+MMTrace is released under the [MIT License](LICENSE).
 
-Third-party datasets and benchmark artifacts remain subject to their respective licenses and terms.
+Example traces and screenshots may include upstream benchmark or dataset material subject to their own licenses or terms.

@@ -2,51 +2,91 @@
 
 [English](README.md) | 简体中文
 
-面向多模态与 Computer-Use Agent 的确定性可靠性检查与轨迹可视化分析工具。
+[![Tests](https://github.com/Gnomeshgh412/mmtrace/actions/workflows/tests.yml/badge.svg)](https://github.com/Gnomeshgh412/mmtrace/actions/workflows/tests.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-MMTrace 用于验证 Agent 轨迹中是否存在可信的证据链：
+MMTrace 是一个面向多模态与 Computer-Use Agent 轨迹的确定性可靠性检查、Trace 调试与证据感知覆盖工具。
+
+MMTrace 检查记录在轨迹（Trace）中的确定性可靠性约束，核心证据链是：
 
 ```text
 Observation -> Model Context -> Action -> Execution -> Post-State
 ```
 
-MMTrace 刻意保持小而清晰。它不是通用 Agent 调试器、语义裁判、恢复框架、Dashboard 平台或 Agent runtime。
+它不仅报告检测到了什么失败，也报告哪些检查因为缺少必要证据而无法充分评估。可以把它类比为面向已记录 Agent 轨迹的 pytest / ESLint 风格可靠性检查器。
 
-## 真实执行失败案例
+MMTrace 刻意保持小而清晰。它不是通用观测平台、语义裁判、恢复框架、Agent runtime，也不证明 Agent 已经正确完成任务。
 
-MMTrace 分析了一条未经修改的公开 Holo4 / OSWorld 真实轨迹。
+## 为什么需要 MMTrace
+
+多模态和 Computer-Use Agent 经常留下不完整或不一致的轨迹证据。截图可能缺失，model context 可能没有包含被观察到的状态，坐标可能不匹配记录的画面，工具执行可能失败，或者一次改变状态的成功动作之后没有 post-state 验证。
+
+MMTrace 会把记录下来的轨迹标准化，在真实存在的证据上运行确定性检查，并在证据缺失时明确保留这个边界。
 
 ![MMTrace Holo4 真实执行失败案例](docs/assets/holo4-real-execution-failure.png)
 
-执行器在 5 个步骤中明确返回执行失败，其中包括：
+真实 Holo4 / OSWorld 轨迹：MMTrace 在 Inspector 中展示 explicit execution failure，并串联 observation、action、execution 与 post-state 证据。该截图不声称所显示的 post-state 一定是错误发生后的立即下一帧。
 
-- `xdotool` 错误
-- Python `NameError`
-- Python `AttributeError`
-- Python `IndexError`
+## Findings vs. Evidence Coverage
 
-MMTrace 将这些机器可验证的执行失败统一报告为：
+没有 Finding 并不意味着整条轨迹已经被充分验证。
 
-- 5 × `MMTRACE007` - Explicit Execution Failure
+一条规则没有产生 Finding，可能是因为所需证据存在且被评估的单元通过了检查；也可能是因为 Trace 中没有记录足够证据，导致该规则无法评估。MMTrace v0.2 会显式区分这两种情况。
 
-上图展示了其中一个真实 ERROR 在 Trace Inspector 中的定位结果。
+- 检测项（Finding）是在记录证据中实际检测到的确定性可靠性问题。
+- Report `PASS` 表示没有检测到 `ERROR` Finding。
+- Report `FAIL` 表示至少检测到一个 `ERROR` Finding。
+- 只有 warning 不会让 Report 变成 `FAIL`。
+- 检查结果（Outcome）包括：`PASS`、`WARNING`、`ERROR`、`NONE`。
+- 证据覆盖（Coverage）包括：`FULL`、`PARTIAL`、`NOT_EVALUABLE`、`NOT_APPLICABLE`。
+- 缺失证据（Missing evidence）说明适用单元为什么无法检查。
 
-其中一个具体 Finding 发生在 source Step 21，在 MMTrace 中标准化为 Step 22：
+`PASS` 不代表所有规则都被充分评估，也不代表任务语义正确或整条轨迹已经被验证。
+
+### Holo4 的覆盖边界
+
+真实 Holo4 / OSWorld case 的 Report 是：
 
 ```text
-NameError: name 'pyautoguiBUTTONDOWN' is not defined
+Status: FAIL
+Errors: 5
+Warnings: 0
 ```
 
-这些 ERROR 出现在一个最终失败的真实任务轨迹中，但 MMTrace 不声称它们已经被证明是整个任务失败的唯一或直接原因。
+MMTrace 检测到 5 个 explicit execution failure，全部报告为 `MMTRACE007`。但 Coverage 视图也展示了这个结论的边界：对于 `MMTRACE007`，100 个适用 action unit 中只有 25 个有足够的 execution-status 证据可以评估；另外 75 个因为缺少 `execution.status` 而不可评估。
 
-来源：
+![Holo4 evidence coverage](docs/assets/holo4-evidence-coverage.png)
 
-- Dataset: [`Hcompany/trajectories`](https://huggingface.co/datasets/Hcompany/trajectories)
-- Benchmark: [OSWorld](https://github.com/xlang-ai/OSWorld)
-- Model: Holo4 27B
-- Trajectory: `libreoffice-calc-13-23ff35a8`
+`MMTRACE007` 是 `ERROR` + `PARTIAL` 证据覆盖：5 个 Finding，25 / 100 evaluated，并缺少 `Execution status x75`。
 
-在本地复现该示例：
+### Browser Use：PASS 不等于充分验证
+
+Browser Use 示例的 Report 是：
+
+```text
+Status: PASS
+Errors: 0
+Warnings: 0
+```
+
+这只表示在当前可评估证据中没有检测到 error finding。多条规则仍然是 `NOT_EVALUABLE`，因为导出的 history 不包含真实 model input、timestamps、action coordinates 或 execution status 等必要证据。
+
+![Browser Use evidence coverage](docs/assets/browser-use-evidence-coverage.png)
+
+`MMTRACE007` 是 `PASS` + `PARTIAL` 证据覆盖：4 个 action unit 中只有 1 个可评估，另外 3 个缺少 execution status。
+
+## Quick Start
+
+从仓库安装：
+
+```bash
+git clone https://github.com/Gnomeshgh412/mmtrace.git
+cd mmtrace
+python3 -m pip install -e .
+```
+
+运行内置 Holo4 示例：
 
 ```bash
 mmtrace check \
@@ -54,32 +94,79 @@ mmtrace check \
   --adapter holo4
 ```
 
-预期结果：
+预期摘要：
 
 ```text
 Status: FAIL
 Errors: 5
 Warnings: 0
-MMTRACE007: 5
+Rule findings:
+MMTRACE007 x5
 ```
 
-## Why MMTrace
+当前 CLI text formatter 只输出 Findings。Evidence Coverage 目前在持久化 Web Inspector 中展示，不在 CLI text 输出中展示。
 
-Agent 失败并不总是推理失败。很多时候，轨迹本身就缺少可信证据：截图缺失、model context 没有引用被观察到的状态、坐标与画面不匹配、动作缺少执行证据，或者成功动作没有 Post-State 验证。
+CLI reference：
 
-MMTrace 专注于记录证据上的确定性检查。当某条规则所需的证据不存在时，规则会跳过，而不是猜测。
+```bash
+mmtrace check INPUT
+mmtrace check INPUT --adapter generic
+mmtrace check INPUT --adapter browser-use
+mmtrace check INPUT --adapter osworld
+mmtrace check INPUT --adapter holo4
+mmtrace check INPUT --format json
+mmtrace check INPUT --output report.json
+mmtrace check INPUT --rule MMTRACE003
+```
 
-## What MMTrace Does
+Exit codes：
 
-- 将 Agent 轨迹标准化为统一 schema
-- 运行确定性可靠性检查
-- 生成基于证据的检查结果（Finding）
-- 提供 CLI 和 JSON report
-- 提供本地 FastAPI backend 与 React Trace Inspector，用于可视化审查
+```text
+0  Check completed and no ERROR findings were reported.
+1  Check completed and at least one ERROR finding was reported.
+2  Input, argument, schema, or adapter error.
+```
+
+## Web Workflow
+
+启动本地 backend：
+
+```bash
+python3 -m pip install -e ".[web,test]"
+python3 -m uvicorn web.backend.app:app \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+启动 frontend：
+
+```bash
+cd web/frontend
+npm ci
+npm run dev
+```
+
+打开 Vite 输出的 URL。前端通过开发代理访问 `/api`。
+
+v0.2 工作流：
+
+```text
+Import Trace
+  -> Adapter normalization
+  -> CheckEngine findings
+  -> EvaluationEngine coverage
+  -> Frozen local snapshot
+  -> Traces workspace
+  -> Inspector
+  -> Evidence Coverage
+  -> Reopen persisted analysis
+```
+
+分析结果会在本地持久化，backend 重启后仍可以从 Traces workspace 重新打开。
 
 ## Reliability Rules
 
-| Rule | Finding | Severity |
+| Rule | Check | Severity |
 | --- | --- | --- |
 | `MMTRACE001` | Missing Observation | ERROR |
 | `MMTRACE002` | Observation Not In Model Context | ERROR |
@@ -89,152 +176,86 @@ MMTrace 专注于记录证据上的确定性检查。当某条规则所需的证
 | `MMTRACE006` | Missing Post-Action Verification | WARNING |
 | `MMTRACE007` | Explicit Execution Failure | ERROR |
 
-并不是每个适配器（Adapter）都能提供每条规则需要的 evidence。IMPLEMENTED 不等于 EVALUABLE。
+规则是否可评估取决于每条检查所需的证据。适配器会标准化已记录证据，但不会伪造缺失证据。
+
+## 真实示例
+
+| Example | Adapter | Report | Coverage highlight | Demonstrates |
+| --- | --- | --- | --- | --- |
+| Holo4 / OSWorld | `holo4` | FAIL · 5E · 0W | `MMTRACE007`: ERROR + PARTIAL, 25 / 100 | explicit executor failures 与覆盖边界 |
+| Browser Use | `browser-use` | PASS · 0E · 0W | 多条 `NOT_EVALUABLE`; `MMTRACE007`: PASS + PARTIAL, 1 / 4 | PASS 不等于充分验证 |
+| OSWorld | `osworld` | FAIL · 1E · 10W | `MMTRACE003`: PARTIAL / ERROR; `MMTRACE005`: FULL / WARNING | 坐标边界与 stale-observation 检查 |
+
+示例路径：
+
+- `examples/holo4_real_execution_failure/`
+- `examples/browser_use_real/`
+- `examples/osworld_real_failure/`
+
+Holo4 示例保留了一条来自 [`Hcompany/trajectories`](https://huggingface.co/datasets/Hcompany/trajectories) 的未修改公开轨迹：[OSWorld](https://github.com/xlang-ai/OSWorld) task `libreoffice-calc-13-23ff35a8`，model 为 Holo4 27B。该 fixture 没有 fault injection，也没有合成 execution metadata。
+
+Browser Use 示例是真实 no-login Browser Use history，任务访问 `example.com`。它的 `PASS` report 很有价值，因为 Coverage 视图明确展示了哪些检查无法从导出的 history 中评估。
+
+## Supported Adapters
+
+- `generic`：直接读取标准化 MMTrace JSON schema。
+- `browser-use`：标准化 Browser Use history export，不伪造缺失的 model input 或 execution-status 证据。
+- `osworld`：标准化 OSWorld `traj.jsonl` 轨迹和截图引用。
+- `holo4`：标准化 OSWorld 风格任务中的 Holo4 trajectory JSON，并在存在时保留 executor/tool output。
 
 ## Architecture
 
-```text
-Agent Trace
-    |
-    v
-Adapter
-    |
-    v
-MMTrace Core
-    |-- CLI / JSON Report
-    |
-    `-- FastAPI
-            |
-            v
-       Trace Inspector
+```mermaid
+flowchart LR
+    S[Source trajectory]
+    A[Adapter]
+    T[Normalized Trace]
+    C[CheckEngine]
+    F[Findings]
+    E[EvaluationEngine]
+    R[Rule Evaluations]
+    P[Frozen Local Snapshot]
+    W[Traces / Inspector / Coverage]
+
+    S --> A --> T
+    T --> C --> F
+    T --> E
+    F --> E --> R
+    T --> P
+    F --> P
+    R --> P
+    P --> W
 ```
 
-MMTrace Core 负责 schema、adapters、确定性检查和 reports。FastAPI 负责 HTTP transport、上传文件、临时 screenshot artifacts 和序列化。React 只负责可视化和交互。
+`CheckEngine` 产生 Findings。Report 状态由 Findings 决定：只要存在 `ERROR` Finding，Report 就是 `FAIL`。
 
-Web artifact URL 属于传输层数据，不会写入 `Trace`、`Observation`、`Finding` 或 `Report`。
+`EvaluationEngine` 产生规则可评估性和证据覆盖。它解释每条规则在记录证据下是 fully evaluated、partially evaluated、not evaluable，还是 not applicable。
 
-## CLI Quick Start
+## Local Persistence
 
-以 editable mode 安装：
-
-```bash
-python3 -m pip install -e .
-```
-
-检查标准 MMTrace JSON 文件：
-
-```bash
-mmtrace check trajectory.json
-```
-
-检查 Browser Use history 文件：
-
-```bash
-mmtrace check history.json --adapter browser-use
-```
-
-检查 OSWorld `traj.jsonl` 文件：
-
-```bash
-mmtrace check traj.jsonl --adapter osworld
-```
-
-检查 Holo4 trajectory JSON 文件：
-
-```bash
-mmtrace check trajectory.json --adapter holo4
-```
-
-输出机器可读 JSON：
-
-```bash
-mmtrace check history.json \
-  --adapter browser-use \
-  --format json
-```
-
-只运行单条规则：
-
-```bash
-mmtrace check trajectory.json \
-  --rule MMTRACE003
-```
-
-## Trace Inspector
-
-Web MVP 提供一个本地 Trace Inspector，包括：
-
-- `generic`、`browser-use`、`osworld` 与 `holo4` Adapter 选择
-- JSON 轨迹上传
-- 可选 screenshot ZIP 上传
-- Trace summary、trajectory list、step inspector 和 findings panel
-- 通过 `/api/artifacts/...` 查看真实 screenshot
-- 当 Before / After 两侧 screenshot 都存在时支持切换
-
-Screenshot artifacts 是可选 evidence。即使不上传 ZIP，分析流程仍会正常工作，UI 会明确显示 screenshot artifact unavailable。
-
-## Run Locally
-
-Backend：
-
-```bash
-python3 -m pip install -e ".[web,test]"
-python3 -m uvicorn web.backend.app:app \
-  --host 127.0.0.1 \
-  --port 8000
-```
-
-Frontend：
-
-```bash
-cd web/frontend
-npm ci
-npm run dev
-```
-
-打开 Vite 输出的 URL。前端通过开发代理访问 `/api`，因此本地开发不需要额外配置 CORS。
-
-## 内置真实案例
-
-| Example | Adapter | Result | Purpose |
-| --- | --- | --- | --- |
-| Holo4 / OSWorld | `holo4` | FAIL · 5 ERROR | 真实 explicit execution failure 验证 |
-| OSWorld | `osworld` | FAIL · 1 ERROR / 10 WARNING | 坐标与 stale-observation 回归 |
-| Browser Use | `browser-use` | PASS | 真实轨迹 / false-positive 回归 |
-
-Paths:
-
-- `examples/holo4_real_execution_failure/`
-- `examples/osworld_real_failure/`
-- `examples/browser_use_real/`
-
-各示例目录中包含 provenance 与复现细节。
-
-## Evidence Limitations
-
-IMPLEMENTED 不等于 EVALUABLE。
-
-规则只会在所需 evidence 存在时运行。没有 Finding 并不证明 Agent 一定正确、安全，或每条规则都已被充分评价。
-
-普通 Browser Use history 目前存在重要证据边界：
-
-- 它不能证明真实 model input messages，因此 `MMTRACE002` 通常不可评价。
-- 坐标、viewport dimensions 和 coordinate-space metadata 可能缺失。
-- 精确的 observation/action timestamps 可能缺失。
-- 并非每条已实现规则都能在每条轨迹上评价。
-- 没有检查结果不等于 Agent 正确。
-
-Trace Inspector 会保留这个区别。它的 PASS 状态表示：在当前可评价 evidence 下，没有发现确定性可靠性 Finding。
-
-## Exit Codes
+MMTrace 是 local-first。Web workflow 会把分析结果存储在：
 
 ```text
-0  Check completed and no ERROR findings were reported.
-1  Check completed and at least one ERROR finding was reported.
-2  Input, argument, schema, or adapter error.
+~/.mmtrace/
 ```
 
-WARNING 不会导致 exit code `1`。
+本地 workspace 包含 SQLite catalog 和冻结的 analysis snapshots。可以通过 `MMTRACE_HOME` 指定其他存储位置：
+
+```bash
+MMTRACE_HOME=/path/to/mmtrace-home python3 -m uvicorn web.backend.app:app
+```
+
+MMTrace 的本地 workspace 会在本机持久化 MMTrace 分析结果。但它不对原始 agent、model 或 benchmark workflow 在导入 Trace 之前的数据流向作额外声明。
+
+## Limitations and Non-goals
+
+- MMTrace 检查确定性的轨迹可靠性约束。
+- 它不判断任务语义正确性。
+- 它不证明 Agent 正确或安全。
+- 它依赖 source trace 和 adapter 暴露的证据。
+- 当必要证据缺失时，它会把规则标记为 `NOT_EVALUABLE`。
+- 它不会用 LLM 或 vision model 推断缺失证据。
+- `FULL` 证据覆盖只表示该规则的所有适用单元都有足够记录证据可供评估；它不表示任务正确。
 
 ## Development
 
@@ -254,35 +275,18 @@ npm run typecheck
 npm run build
 ```
 
-## CI
-
-GitHub Actions 当前运行：
-
-- Python 3.11 和 3.12
-- `python -m pip install -e ".[web,test]"`
-- `python -m pytest -q`
-- `python -m pip check`
-- Node 20
-- `npm ci`
-- `npm run typecheck`
-- `npm run build`
-
-CI 不需要 secrets，也不会调用 SiliconFlow、Browser Use 或任何 Agent runtime。
-
-## Packaging Boundary
-
-Python package 是 MMTrace core package。当前 Web MVP 面向从本仓库 source checkout 的本地开发使用。
-
-不要假设只安装 wheel 就会包含一个可独立运行的前端应用。
+CI 当前运行 Python 3.11 / 3.12 tests、`pip check`、frontend typecheck 和 frontend build。
 
 ## Project Status
 
-MMTrace v0.1.0 是 Core + Trace Inspector MVP 的首个公开版本。
+`main` branch 包含即将发布的 v0.2 feature set，包括 local persistence、Traces workspace 和 evidence-aware rule coverage。
 
-当前仍是一个早期、local-first 的可靠性检查与轨迹分析工具，并非生产级平台。
+最新 tagged release：`v0.1.0`
+
+在 v0.2 release polish 和 release step 完成之前，package version 仍保持 `0.1.0`。
 
 ## License
 
-MMTrace 采用 MIT License 发布。
+MMTrace 使用 [MIT License](LICENSE) 发布。
 
-第三方数据集、benchmark 及其 artifacts 仍分别受各自许可证与使用条款约束。
+示例 traces 和 screenshots 可能包含上游 benchmark 或 dataset material，并受其各自 license 或 terms 约束。
