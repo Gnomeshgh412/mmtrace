@@ -117,6 +117,8 @@ mmtrace check INPUT --adapter holo4
 mmtrace check INPUT --format json
 mmtrace check INPUT --output report.json
 mmtrace check INPUT --rule MMTRACE003
+mmtrace serve
+mmtrace serve --host 127.0.0.1 --port 8000
 ```
 
 Exit codes:
@@ -129,24 +131,40 @@ Exit codes:
 
 ## Web Workflow
 
-Run the local backend:
+From a source checkout, build the production Web UI and run one local server:
 
 ```bash
-python3 -m pip install -e ".[web,test]"
-python3 -m uvicorn web.backend.app:app \
-  --host 127.0.0.1 \
-  --port 8000
+python3 -m pip install -e ".[web]"
+
+cd web/frontend
+npm ci
+npm run build
+cd ../..
+
+mmtrace serve
 ```
 
-Run the frontend:
+Open:
+
+```text
+http://127.0.0.1:8000
+```
+
+`mmtrace serve` serves the built Web UI and `/api/*` from one local Uvicorn process. The default host is `127.0.0.1` and the default port is `8000`.
+
+The v0.2 Web UI is served from a source checkout. Frontend assets are not yet bundled into the Python wheel. If the production frontend build is missing, `mmtrace serve` exits and prints the build commands.
+
+Rebuild the frontend after the first checkout or after frontend source changes:
 
 ```bash
 cd web/frontend
 npm ci
-npm run dev
+npm run build
 ```
 
-Open the URL printed by Vite. The frontend uses a development proxy for `/api`.
+After the frontend has been built, runtime serving does not require a Vite dev server or Node process.
+
+MMTrace binds to `127.0.0.1` by default because traces and screenshots may contain sensitive data. If you explicitly use `--host 0.0.0.0`, the local Web UI may be visible to other devices on your network.
 
 The v0.2 workflow is:
 
@@ -163,6 +181,21 @@ Import Trace
 ```
 
 Analyses survive backend restart and can be reopened from the Traces workspace.
+
+For frontend development, Vite can still be run separately:
+
+```bash
+python3 -m pip install -e ".[web]"
+python3 -m uvicorn web.backend.app:app \
+  --host 127.0.0.1 \
+  --port 8000
+
+cd web/frontend
+npm ci
+npm run dev
+```
+
+Open the URL printed by Vite. The frontend development server uses a proxy for `/api`.
 
 ## Reliability Rules
 
@@ -242,7 +275,7 @@ MMTrace is local-first. The web workflow stores persisted analyses under:
 The local workspace contains a SQLite catalog plus frozen analysis snapshots. Set `MMTRACE_HOME` to use a different storage location:
 
 ```bash
-MMTRACE_HOME=/path/to/mmtrace-home python3 -m uvicorn web.backend.app:app
+MMTRACE_HOME=/path/to/mmtrace-home mmtrace serve
 ```
 
 MMTrace's local workspace persists MMTrace analyses locally. It does not make claims about where the original agent, model, or benchmark workflow sent data before the trace was imported.
@@ -280,6 +313,8 @@ CI currently runs Python 3.11 / 3.12 tests, `pip check`, frontend typecheck, and
 ## Project Status
 
 The `main` branch contains the upcoming v0.2 feature set, including local persistence, the Traces workspace, and evidence-aware rule coverage.
+
+The v0.2 Web UI is served from a source checkout; frontend assets are not yet bundled into the Python wheel.
 
 Latest tagged release: `v0.1.0`
 

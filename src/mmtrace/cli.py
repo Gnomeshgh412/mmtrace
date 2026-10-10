@@ -23,6 +23,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "check":
         return run_check(args, stderr=sys.stderr)
+    if args.command == "serve":
+        from mmtrace.serve import serve
+
+        return serve(host=args.host, port=args.port)
 
     parser.print_help(sys.stderr)
     return 2
@@ -42,6 +46,19 @@ def build_parser() -> argparse.ArgumentParser:
     check_parser.add_argument("--format", choices=["text", "json"], default="text")
     check_parser.add_argument("--output", help="write report to this path")
     check_parser.add_argument("--rule", help="run only the specified rule ID")
+
+    serve_parser = subparsers.add_parser("serve", help="serve the MMTrace web UI")
+    serve_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="host to bind (default: 127.0.0.1)",
+    )
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="port to bind (default: 8000)",
+    )
 
     return parser
 

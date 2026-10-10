@@ -1,7 +1,11 @@
 import json
+import sys
 from pathlib import Path
 
+import pytest
+
 from mmtrace.cli import main
+from mmtrace import serve as serve_module
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REAL_OSWORLD = Path(__file__).parents[1] / "examples" / "osworld_real_failure" / "traj.jsonl"
@@ -144,3 +148,81 @@ def test_cli_osworld_adapter_reports_real_failure(capsys) -> None:
     assert exit_code == 1
     assert parsed["status"] == "FAIL"
     assert {"MMTRACE003", "MMTRACE005"} <= rule_ids
+
+
+def test_cli_serve_help_lists_host_and_port(capsys) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["serve", "--help"])
+
+    captured = capsys.readouterr()
+    assert exc.value.code == 0
+    assert "serve" in captured.out
+    assert "--host" in captured.out
+    assert "127.0.0.1" in captured.out
+    assert "--port" in captured.out
+    assert "8000" in captured.out
+
+
+def test_serve_missing_frontend_build_exits_two(tmp_path: Path, capsys) -> None:
+    (tmp_path / "web" / "backend").mkdir(parents=True)
+    (tmp_path / "web" / "frontend").mkdir(parents=True)
+
+    exit_code = serve_module.serve(
+        root=tmp_path,
+        app_factory=lambda frontend_dist: pytest.fail(
+            f"app should not be created for missing build: {frontend_dist}"
+        ),
+        run_server=lambda *args, **kwargs: pytest.fail("server should not start"),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Frontend build not found." in captured.err
+    assert "cd web/frontend" in captured.err
+    assert "npm ci" in captured.err
+    assert "npm run build" in captured.err
+    assert "mmtrace serve" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_serve_warns_for_public_host(tmp_path: Path, capsys) -> None:
+    dist = tmp_path / "web" / "frontend" / "dist"
+    (tmp_path / "web" / "backend").mkdir(parents=True)
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    started = {}
+
+    exit_code = serve_module.serve(
+        host="0.0.0.0",
+        port=8123,
+        root=tmp_path,
+        app_factory=lambda frontend_dist: {"dist": frontend_dist},
+        run_server=lambda app, **kwargs: started.update({"app": app, **kwargs}),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out == "MMTrace running at http://0.0.0.0:8123\n"
+    assert "expose local traces and screenshots" in captured.err
+    assert started == {
+        "app": {"dist": dist},
+        "host": "0.0.0.0",
+        "port": 8123,
+    }
+
+
+def test_serve_adds_source_checkout_root_to_import_path(tmp_path: Path, monkeypatch) -> None:
+    dist = tmp_path / "web" / "frontend" / "dist"
+    (tmp_path / "web" / "backend").mkdir(parents=True)
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    monkeypatch.setattr(sys, "path", [path for path in sys.path if path != str(tmp_path)])
+
+    exit_code = serve_module.serve(
+        root=tmp_path,
+        app_factory=lambda frontend_dist: {"dist": frontend_dist},
+        run_server=lambda *args, **kwargs: None,
+    )
+
+    assert exit_code == 0
+    assert sys.path[0] == str(tmp_path)

@@ -117,6 +117,8 @@ mmtrace check INPUT --adapter holo4
 mmtrace check INPUT --format json
 mmtrace check INPUT --output report.json
 mmtrace check INPUT --rule MMTRACE003
+mmtrace serve
+mmtrace serve --host 127.0.0.1 --port 8000
 ```
 
 Exit codes：
@@ -129,24 +131,40 @@ Exit codes：
 
 ## Web Workflow
 
-启动本地 backend：
+从源码仓库构建 production Web UI，并用一个本地服务进程启动：
 
 ```bash
-python3 -m pip install -e ".[web,test]"
-python3 -m uvicorn web.backend.app:app \
-  --host 127.0.0.1 \
-  --port 8000
+python3 -m pip install -e ".[web]"
+
+cd web/frontend
+npm ci
+npm run build
+cd ../..
+
+mmtrace serve
 ```
 
-启动 frontend：
+打开：
+
+```text
+http://127.0.0.1:8000
+```
+
+`mmtrace serve` 会从同一个本地 Uvicorn 进程同时服务已构建的 Web UI 和 `/api/*`。默认 host 是 `127.0.0.1`，默认 port 是 `8000`。
+
+v0.2 的 Web UI 当前从源码仓库启动；frontend assets 尚未打包进 Python wheel。如果 production frontend build 不存在，`mmtrace serve` 会退出并打印构建命令。
+
+第一次 checkout 后，或 frontend source 更新后，需要重新构建 frontend：
 
 ```bash
 cd web/frontend
 npm ci
-npm run dev
+npm run build
 ```
 
-打开 Vite 输出的 URL。前端通过开发代理访问 `/api`。
+frontend build 完成后，运行时不需要 Vite dev server 或 Node process。
+
+MMTrace 默认绑定到 `127.0.0.1`，因为 traces 和 screenshots 可能包含敏感数据。如果显式使用 `--host 0.0.0.0`，本地 Web UI 可能会对同一网络中的其他设备可见。
 
 v0.2 工作流：
 
@@ -163,6 +181,21 @@ Import Trace
 ```
 
 分析结果会在本地持久化，backend 重启后仍可以从 Traces workspace 重新打开。
+
+如果进行 frontend development，仍然可以单独运行 Vite：
+
+```bash
+python3 -m pip install -e ".[web]"
+python3 -m uvicorn web.backend.app:app \
+  --host 127.0.0.1 \
+  --port 8000
+
+cd web/frontend
+npm ci
+npm run dev
+```
+
+打开 Vite 输出的 URL。frontend development server 会通过代理访问 `/api`。
 
 ## Reliability Rules
 
@@ -242,7 +275,7 @@ MMTrace 是 local-first。Web workflow 会把分析结果存储在：
 本地 workspace 包含 SQLite catalog 和冻结的 analysis snapshots。可以通过 `MMTRACE_HOME` 指定其他存储位置：
 
 ```bash
-MMTRACE_HOME=/path/to/mmtrace-home python3 -m uvicorn web.backend.app:app
+MMTRACE_HOME=/path/to/mmtrace-home mmtrace serve
 ```
 
 MMTrace 的本地 workspace 会在本机持久化 MMTrace 分析结果。但它不对原始 agent、model 或 benchmark workflow 在导入 Trace 之前的数据流向作额外声明。
@@ -280,6 +313,8 @@ CI 当前运行 Python 3.11 / 3.12 tests、`pip check`、frontend typecheck 和 
 ## Project Status
 
 `main` branch 包含即将发布的 v0.2 feature set，包括 local persistence、Traces workspace 和 evidence-aware rule coverage。
+
+v0.2 的 Web UI 当前从源码仓库启动；frontend assets 尚未打包进 Python wheel。
 
 最新 tagged release：`v0.1.0`
 

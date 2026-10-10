@@ -5,6 +5,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import web.backend.app as backend_app
@@ -133,6 +134,50 @@ def test_health() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "service": "mmtrace"}
+
+
+def test_configured_frontend_serves_spa_and_keeps_api_separate(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
+    (dist / "index.html").write_text(
+        '<!doctype html><script type="module" src="/assets/app.js"></script>',
+        encoding="utf-8",
+    )
+    (assets / "app.js").write_text("console.log('mmtrace');", encoding="utf-8")
+    test_app = FastAPI()
+
+    @test_app.get("/api/health")
+    def fake_health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @test_app.get("/api/analyses")
+    def fake_analyses() -> list:
+        return []
+
+    backend_app.configure_frontend(test_app, dist)
+    frontend_client = TestClient(test_app)
+
+    for path in ["/", "/traces", "/traces/example-analysis"]:
+        response = frontend_client.get(path)
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/html")
+        assert b"/assets/app.js" in response.content
+
+    asset_response = frontend_client.get("/assets/app.js")
+    assert asset_response.status_code == 200
+    assert asset_response.text == "console.log('mmtrace');"
+    assert frontend_client.get("/assets/missing.js").status_code == 404
+
+    health_response = frontend_client.get("/api/health")
+    assert health_response.status_code == 200
+    assert health_response.json() == {"status": "ok"}
+    analyses_response = frontend_client.get("/api/analyses")
+    assert analyses_response.status_code == 200
+    assert analyses_response.json() == []
+    missing_api_response = frontend_client.get("/api/does-not-exist")
+    assert missing_api_response.status_code == 404
+    assert not missing_api_response.headers["content-type"].startswith("text/html")
 
 
 def test_analyze_generic_valid_trace() -> None:

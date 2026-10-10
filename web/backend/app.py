@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.staticfiles import StaticFiles
 
 from mmtrace.adapters.base import AdapterError, BaseAdapter
 from mmtrace.adapters.browser_use import BrowserUseAdapter
@@ -30,6 +31,36 @@ app = FastAPI(title="MMTrace API")
 ALLOWED_SCREENSHOT_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 MAX_ARTIFACT_FILES = 500
 MAX_ARTIFACT_BYTES = 100 * 1024 * 1024
+
+
+def configure_frontend(application: FastAPI, frontend_dist: Path) -> FastAPI:
+    """Serve the built frontend from a validated Vite dist directory."""
+    index_path = frontend_dist / "index.html"
+    assets_path = frontend_dist / "assets"
+    if not index_path.is_file() or not assets_path.is_dir():
+        raise ValueError("frontend_dist must contain index.html and assets/")
+
+    application.mount(
+        "/assets",
+        StaticFiles(directory=assets_path),
+        name="frontend-assets",
+    )
+
+    @application.get("/", include_in_schema=False)
+    def frontend_index() -> FileResponse:
+        return FileResponse(index_path)
+
+    @application.get("/{spa_path:path}", include_in_schema=False)
+    def frontend_spa_fallback(spa_path: str) -> FileResponse:
+        if spa_path.startswith("api/") or spa_path.startswith("assets/"):
+            raise _error_response(
+                status_code=404,
+                code="INVALID_INPUT",
+                message="Not found.",
+            )
+        return FileResponse(index_path)
+
+    return application
 
 
 @app.get("/api/health")
