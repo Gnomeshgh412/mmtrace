@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mmtrace"
 version = "0.1.0"
-description = "Reliability checker schemas for multimodal agent trajectories."
+description = "Deterministic reliability checking, trace inspection, and evidence-aware coverage for multimodal agent trajectories."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

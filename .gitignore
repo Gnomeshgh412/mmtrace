@@ -20,3 +20,6 @@ web/frontend/dist/
 API-KEY.txt
 *.key
 .idea/
+/.mmtrace/
+/mmtrace.db
+/analyses/
