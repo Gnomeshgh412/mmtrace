@@ -312,13 +312,13 @@ CI 当前运行 Python 3.11 / 3.12 tests、`pip check`、frontend typecheck 和 
 
 ## Project Status
 
-`main` branch 包含即将发布的 v0.2 feature set，包括 local persistence、Traces workspace 和 evidence-aware rule coverage。
+MMTrace v0.2.0 为当前正式版本，包括 local persistence、Traces workspace 和 evidence-aware rule coverage。
 
 v0.2 的 Web UI 当前从源码仓库启动；frontend assets 尚未打包进 Python wheel。
 
-最新 tagged release：`v0.1.0`
+最新 tagged release：`v0.2.0`
 
-在 v0.2 release polish 和 release step 完成之前，package version 仍保持 `0.1.0`。
+当前 package version：`0.2.0`。
 
 ## License
 

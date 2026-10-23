@@ -312,13 +312,13 @@ CI currently runs Python 3.11 / 3.12 tests, `pip check`, frontend typecheck, and
 
 ## Project Status
 
-The `main` branch contains the upcoming v0.2 feature set, including local persistence, the Traces workspace, and evidence-aware rule coverage.
+MMTrace v0.2.0 is the current release. It includes local persistence, the Traces workspace, and evidence-aware rule coverage.
 
 The v0.2 Web UI is served from a source checkout; frontend assets are not yet bundled into the Python wheel.
 
-Latest tagged release: `v0.1.0`
+Latest tagged release: `v0.2.0`
 
-The package version remains `0.1.0` until the v0.2 release polish and release step are complete.
+Current package version: `0.2.0`
 
 ## License
 
